@@ -4,135 +4,133 @@ import tensorflow as tf
 import os
 import shutil
 
-# 1. Загрузка данных из IDS.json
+# 1. データローディング (IDS.jsonから)
 def load_data(filepath="IDS.json"):
-    """Загружает данные из JSON-файла."""
+    """JSONファイルからデータをロードします."""
     try:
         with open(filepath, 'r') as f:
             data = json.load(f)
-            X = np.array(data['X']).T  # Транспонируем X
-            Y = np.array(data['Y']).T  # Транспонируем Y
+            X = np.array(data['X']).T  # Xを転置
+            Y = np.array(data['Y']).T  # Yを転置
 
-            # Нормализация данных (пример)
-            X = (X - np.mean(X, axis=1, keepdims=True)) / np.std(X, axis=1, keepdims=True) # Стандартизация
-            Y = (Y - np.mean(Y, axis=1, keepdims=True)) / np.std(Y, axis=1, keepdims=True)  # Стандартизация
+            # データ正規化 (例)
+            X = (X - np.mean(X, axis=1, keepdims=True)) / np.std(X, axis=1, keepdims=True) # 標準化
+            Y = (Y - np.mean(Y, axis=1, keepdims=True)) / np.std(Y, axis=1, keepdims=True)  # 標準化
 
-
-            return X, Y, data  # Возвращаем и data
+            return X, Y, data  # dataも返します
     except FileNotFoundError:
-        print(f"Ошибка: Файл '{filepath}' не найден.")
+        print(f"エラー: ファイル '{filepath}' が見つかりません.")
         return None, None, None
     except json.JSONDecodeError:
-        print(f"Ошибка: Невозможно декодировать JSON из файла '{filepath}'. Проверьте формат файла.")
+        print(f"エラー: ファイル '{filepath}' から JSON をデコードできません. ファイル形式を確認してください.")
         return None, None, None
     except KeyError as e:
-        print(f"Ошибка: Ключ '{e}' отсутствует в JSON-файле.  Убедитесь, что JSON содержит массивы 'X' и 'Y'.")
+        print(f"エラー: キー '{e}' が JSON ファイルにありません. JSON が 'X' と 'Y' の配列を含むことを確認してください.")
         return None, None, None
 
-# Функция для сохранения данных в IDS.json
+# データの保存 (IDS.jsonへ)
 def save_data(filepath="IDS.json", data=None):
-    """Сохраняет обновленные данные в JSON-файл."""
+    """更新されたデータをJSONファイルに保存します."""
     if data is None:
-        print("Ошибка: Нет данных для сохранения.")
+        print("エラー: 保存するデータがありません.")
         return
 
     try:
         with open(filepath, 'w') as f:
-            json.dump(data, f, indent=4)  # Записываем с отступами для читаемости
-        print(f"Данные сохранены в {filepath}")
+            json.dump(data, f, indent=4)  # 読みやすくするためにインデントをつけて書き込み
+        print(f"データは {filepath} に保存されました.")
     except Exception as e:
-        print(f"Ошибка при сохранении данных: {e}")
+        print(f"データの保存中にエラーが発生しました: {e}")
 
-# Функция для очистки экрана
+# 画面クリア
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
 
-# Функция для вывода справки
+# ヘルプ表示
 def print_help():
-    print("Список команд:")
-    print("help - Объяснение указанной команды (по умолчанию выводит этот список)")
-    print("save - Сохранение модели с указанным именем и директорией (по умолчанию LoView в текущей директории)")
-    print("load - Загрузка модели с указанным именем и директорией (по умолчанию LoView в текущей директории)")
-    print("train - Тренировка текущей модели на указанное кол-во эпох (по умолчанию 100 эпох)")
-    print("use - Использование нейросети (введите 3 числа, или 'all' для третьего, модель выдаст 4 числа)")
-    print("show - Показывает 'правильные' ответы из датасета для заданных входных значений (аналогично 'use')")
-    print("add - Добавление новых данных в датасет (только если X не существует)")
-    print("edit - Редактирование существующих данных в датасете")
-    print("remove - Удаление данных из датасета")
-    print("delete - Удаление сохраненной модели")
-    print("quit - Выход")
+    print("コマンド一覧:")
+    print("help - 指定されたコマンドの説明 (デフォルトはこのリストを表示)")
+    print("save - 指定された名前とディレクトリでモデルを保存 (デフォルトは LoView で現在のディレクトリ)")
+    print("load - 指定された名前とディレクトリでモデルをロード (デフォルトは LoView で現在のディレクトリ)")
+    print("train - 現在のモデルを指定されたエポック数で学習 (デフォルトは 100 エポック)")
+    print("use - ニューラルネットワークの使用 (3つの数字を入力すると、モデルが4つの数字を返します)")
+    print("show - データセットから、与えられた入力値に対する「正しい」回答を表示 (use と同様)")
+    print("add - データセットへの新しいデータの追加 (X が存在しない場合にのみ)")
+    print("edit - データセット内の既存のデータの編集")
+    print("remove - データセットからのデータの削除")
+    print("delete - 保存されたモデルの削除")
+    print("quit - 終了")
 
-# Функция для сохранения модели
+# モデルの保存
 def save_model(model, name="LoView", directory="."):
     filepath = os.path.join(directory, name)
     model.save(filepath)
-    print(f"Модель сохранена в {filepath}")
+    print(f"モデルは {filepath} に保存されました.")
 
-# Функция для загрузки модели
+# モデルのロード
 def load_model(name="LoView", directory="."):
     filepath = os.path.join(directory, name)
     try:
         model = tf.keras.models.load_model(filepath)
-        print(f"Модель загружена из {filepath}")
+        print(f"モデルは {filepath} からロードされました.")
         return model
     except OSError:
-        print(f"Ошибка: Не удалось загрузить модель из {filepath}.  Проверьте имя и путь.")
+        print(f"エラー: モデルを {filepath} からロードできませんでした. 名前とパスを確認してください.")
         return None
 
-# Функция для обучения модели
+# モデルの学習
 def train_model(model, X, Y, epochs=100):
-    print("Начинаем обучение...")
+    print("学習を開始します...")
     model.fit(X.T, Y.T, epochs=epochs, batch_size=32, verbose=1)
-    print("Обучение завершено.")
+    print("学習が完了しました.")
 
-# Функция для использования модели
+# モデルの使用
 def use_model(model):
     try:
-        num1 = float(input("Введите первое число: "))
-        num2 = float(input("Введите второе число: "))
-        num3 = input("Введите третье число (или 'all'): ").lower()
+        num1 = float(input("最初の数字を入力してください: "))
+        num2 = float(input("2番目の数字を入力してください: "))
+        num3 = input("3番目の数字を入力してください (または 'all'): ").lower()
 
         if num3 == "all":
-            third_numbers = np.linspace(1, 10, 10)  # Генерируем 10 чисел от 1 до 10
+            third_numbers = np.linspace(1, 10, 10)  # 1から10までの数字を10個生成
             for i, third_number in enumerate(third_numbers):
                 new_example = np.array([[num1], [num2], [third_number]])
                 new_example = new_example.T
                 prediction = model.predict(new_example)
-                print(f"Результат для третьего числа {third_number:.2f}: {prediction}") # Выводим с форматированием для красоты
+                print(f"3番目の数字 {third_number:.2f} に対する結果: {prediction}")
         else:
             try:
                 num3 = float(num3)
                 new_example = np.array([[num1], [num2], [num3]])
                 new_example = new_example.T
                 prediction = model.predict(new_example)
-                print(f"Результат: {prediction}")
+                print(f"結果: {prediction}")
             except ValueError:
-                print("Ошибка: Пожалуйста, введите корректное число для третьего числа.")
+                print("エラー: 3番目の数字に有効な数字を入力してください.")
 
     except ValueError:
-        print("Ошибка: Пожалуйста, введите корректные числа для первого и второго чисел.")
+        print("エラー: 1番目と2番目の数字に有効な数字を入力してください.")
 
-# Функция для показа "правильных" ответов из датасета
-def show_data(X, Y):  # Добавим X и Y как аргументы
+# データセットからの「正しい」回答の表示
+def show_data(X, Y):  # X と Y を引数として渡す
     try:
-        num1 = float(input("Введите первое число: "))
-        num2 = float(input("Введите второе число: "))
-        num3 = input("Введите третье число (или 'all'): ").lower()
+        num1 = float(input("最初の数字を入力してください: "))
+        num2 = float(input("2番目の数字を入力してください: "))
+        num3 = input("3番目の数字を入力してください (または 'all'): ").lower()
 
         if num3 == "all":
-            third_numbers = np.linspace(1, 10, 10)  # Генерируем 10 чисел от 1 до 10
+            third_numbers = np.linspace(1, 10, 10)  # 1から10までの数字を10個生成
             for i, third_number in enumerate(third_numbers):
-                input_values = np.array([num1, num2, third_number]) # Создаём вектор входных значений
+                input_values = np.array([num1, num2, third_number]) # 入力値のベクトルを作成
                 found = False
                 for j in range(X.shape[1]):
-                    if np.allclose(X[:, j], input_values): #Сравниваем с каждым столбцом X
-                        print(f"Правильный ответ для третьего числа {third_number:.2f}: {Y[:, j]}")
+                    if np.allclose(X[:, j], input_values): #Xの各列と比較
+                        print(f"3番目の数字 {third_number:.2f} に対する正しい回答: {Y[:, j]}")
                         found = True
-                        break  # Нашли соответствие, выходим из внутреннего цикла
+                        break  # 一致するものが見つかったので、内側のループから抜けます
 
                 if not found:
-                    print(f"Данные для третьего числа {third_number:.2f} не найдены в датасете.")
-
+                    print(f"3番目の数字 {third_number:.2f} に対するデータは、データセットに見つかりませんでした.")
 
         else:
             try:
@@ -141,47 +139,45 @@ def show_data(X, Y):  # Добавим X и Y как аргументы
                 found = False
                 for j in range(X.shape[1]):
                      if np.allclose(X[:, j], input_values):
-                         print(f"Правильный ответ: {Y[:, j]}")
+                         print(f"正しい回答: {Y[:, j]}")
                          found = True
                          break
                 if not found:
-                    print("Данные не найдены в датасете.")
-
-
+                    print("データはデータセットに見つかりませんでした.")
 
             except ValueError:
-                print("Ошибка: Пожалуйста, введите корректное число для третьего числа.")
+                print("エラー: 3番目の数字に有効な数字を入力してください.")
 
     except ValueError:
-        print("Ошибка: Пожалуйста, введите корректные числа для первого и второго чисел.")
+        print("エラー: 1番目と2番目の数字に有効な数字を入力してください.")
 
 def add_data(X, Y, data):
-    """Добавляет новые данные в датасет, если X не существует."""
+    """データセットに新しいデータを追加します (Xが存在しない場合のみ)."""
     try:
-        num1 = float(input("Введите первое число для X: "))
-        num2 = float(input("Введите второе число для X: "))
-        num3_input = input("Введите третье число для X (или 'all'): ").lower()
+        num1 = float(input("Xの最初の数字を入力してください: "))
+        num2 = float(input("Xの2番目の数字を入力してください: "))
+        num3_input = input("Xの3番目の数字を入力してください (または 'all'): ").lower()
 
         if num3_input == "all":
-            num3_values = np.linspace(1, 10, 10)  # Создаем 10 значений для третьего числа
+            num3_values = np.linspace(1, 10, 10)  # 3番目の数字の値を10個作成
 
-            # Проверка на существование
+            # 存在チェック
             for num3 in num3_values:
                 input_values = [num1, num2, num3]
                 for existing_x in data['X']:
                     if np.allclose(existing_x, input_values):
-                        print(f"Ошибка: Данные X: {input_values} уже существуют.  Нельзя добавить дубликат.")
-                        return  # Выходим из функции, если нашли дубликат
+                        print(f"エラー: データ X: {input_values} はすでに存在します. 重複を追加できません.")
+                        return  # 重複が見つかったら関数を終了
 
             Y_values = []
-            for i in range(len(num3_values)): # запрашиваем для каждого X свой Y
-                 y1 = float(input(f"Введите первое число для Y (для X: {num1}, {num2}, {num3_values[i]}): "))
-                 y2 = float(input(f"Введите второе число для Y (для X: {num1}, {num2}, {num3_values[i]}): "))
-                 y3 = float(input(f"Введите третье число для Y (для X: {num1}, {num2}, {num3_values[i]}): "))
-                 y4 = float(input(f"Введите четвертое число для Y (для X: {num1}, {num2}, {num3_values[i]}): "))
+            for i in range(len(num3_values)): # 各Xに対してYを要求
+                 y1 = float(input(f"Yの最初の数字を入力してください (X: {num1}, {num2}, {num3_values[i]}): "))
+                 y2 = float(input(f"Yの2番目の数字を入力してください (X: {num1}, {num2}, {num3_values[i]}): "))
+                 y3 = float(input(f"Yの3番目の数字を入力してください (X: {num1}, {num2}, {num3_values[i]}): "))
+                 y4 = float(input(f"Yの4番目の数字を入力してください (X: {num1}, {num2}, {num3_values[i]}): "))
                  Y_values.append([y1, y2, y3, y4])
 
-            confirmation = input("Вы уверены, что хотите добавить эти данные? (y/n): ").lower()
+            confirmation = input("これらのデータを追加してもよろしいですか? (y/n): ").lower()
 
             if confirmation == "y":
 
@@ -192,31 +188,30 @@ def add_data(X, Y, data):
                     data['X'].append(new_x)
                     data['Y'].append(new_y)
 
-                save_data(data=data)  # Сохраняем обновленные данные
-                print("Данные успешно добавлены.")
+                save_data(data=data)  # 更新されたデータを保存
+                print("データが正常に追加されました.")
 
             else:
-                print("Добавление данных отменено.")
+                print("データの追加はキャンセルされました.")
 
 
         else:
 
-            num3 = float(num3_input)  # Преобразуем в число, если не "all"
-            input_values = [num1, num2, num3]  # Формируем искомый X
+            num3 = float(num3_input)  # "all" でない場合は数字に変換
+            input_values = [num1, num2, num3]  # 探しているXを形成
 
-            # Проверка на существование
+            # 存在チェック
             for existing_x in data['X']:
                 if np.allclose(existing_x, input_values):
-                    print(f"Ошибка: Данные X: {input_values} уже существуют. Нельзя добавить дубликат.")
-                    return  # Выходим из функции
+                    print(f"エラー: データ X: {input_values} はすでに存在します. 重複を追加できません.")
+                    return  # 関数を終了
 
-            y1 = float(input("Введите первое число для Y: "))
-            y2 = float(input("Введите второе число для Y: "))
-            y3 = float(input("Введите третье число для Y: "))
-            y4 = float(input("Введите четвертое число для Y: "))
+            y1 = float(input("Yの最初の数字を入力してください: "))
+            y2 = float(input("Yの2番目の数字を入力してください: "))
+            y3 = float(input("Yの3番目の数字を入力してください: "))
+            y4 = float(input("Yの4番目の数字を入力してください: "))
 
-
-            confirmation = input("Вы уверены, что хотите добавить эти данные? (y/n): ").lower()
+            confirmation = input("このデータを追加してもよろしいですか? (y/n): ").lower()
 
             if confirmation == "y":
 
@@ -226,122 +221,121 @@ def add_data(X, Y, data):
                 data['X'].append(new_x)
                 data['Y'].append(new_y)
 
-                save_data(data=data)  # Сохраняем обновленные данные
-                print("Данные успешно добавлены.")
+                save_data(data=data)  # 更新されたデータを保存
+                print("データが正常に追加されました.")
 
             else:
-                print("Добавление данных отменено.")
+                print("データの追加はキャンセルされました.")
 
     except ValueError:
-        print("Ошибка: Пожалуйста, введите корректные числа.")
+        print("エラー: 有効な数字を入力してください.")
     except Exception as e:
-        print(f"Произошла ошибка: {e}")
+        print(f"エラーが発生しました: {e}")
 
 
 
-def edit_data(X, Y, data): # Добавьте data как аргумент
-    """Редактирует существующие данные в датасете."""
+def edit_data(X, Y, data): # dataを引数として追加
+    """データセット内の既存のデータを編集します."""
     try:
-        num1 = float(input("Введите первое число для поиска X: "))
-        num2 = float(input("Введите второе число для поиска X: "))
-        num3_input = input("Введите третье число для поиска X (или 'all'): ").lower()
+        num1 = float(input("検索するXの最初の数字を入力してください: "))
+        num2 = float(input("検索するXの2番目の数字を入力してください: "))
+        num3_input = input("検索するXの3番目の数字を入力してください (または 'all'): ").lower()
 
         if num3_input == "all":
             third_numbers = np.linspace(1, 10, 10)
-            input_values_list = [[num1, num2, num3] for num3 in third_numbers]  # Список для поиска
-            # input_values = np.array([num1, num2, num3])  # Создаем массив numpy для поиска
+            input_values_list = [[num1, num2, num3] for num3 in third_numbers]  # 検索用のリスト
 
             for input_values in input_values_list:
-              found_index = None # Добавим индекс для отслеживания
+              found_index = None # インデックス追跡用
               for i in range(len(data['X'])):
                 if np.allclose(data['X'][i], input_values):
                   found_index = i
                   break
 
               if found_index is not None:
-                  print(f"Найдено соответствие для X: {data['X'][found_index]}, Y: {data['Y'][found_index]}")
+                  print(f"X: {data['X'][found_index]}, Y: {data['Y'][found_index]} に一致するものが見つかりました")
 
-                  confirm_edit = input("Вы хотите отредактировать эти данные? (y/n): ").lower()
+                  confirm_edit = input("このデータを編集しますか? (y/n): ").lower()
                   if confirm_edit == "y":
 
-                      y1 = float(input("Введите новое первое число для Y: "))
-                      y2 = float(input("Введите новое второе число для Y: "))
-                      y3 = float(input("Введите новое третье число для Y: "))
-                      y4 = float(input("Введите новое четвертое число для Y: "))
+                      y1 = float(input("Yの新しい最初の数字を入力してください: "))
+                      y2 = float(input("Yの新しい2番目の数字を入力してください: "))
+                      y3 = float(input("Yの新しい3番目の数字を入力してください: "))
+                      y4 = float(input("Yの新しい4番目の数字を入力してください: "))
                       new_y = [y1, y2, y3, y4]
 
-                      confirm_final = input("Вы уверены, что хотите заменить Y данными {} ? (y/n):".format(new_y)).lower() # добавили подтверждение
+                      confirm_final = input("Yをデータ {} で置き換えますか? (y/n):".format(new_y)).lower() # 確認を追加
 
                       if confirm_final == "y":
                          data['Y'][found_index] = new_y
                          save_data(data=data)
-                         print("Данные успешно отредактированы.")
+                         print("データは正常に編集されました.")
                       else:
-                        print("Редактирование отменено")
+                        print("編集はキャンセルされました")
 
 
                   else:
-                      print("Редактирование отменено.")
+                      print("編集はキャンセルされました.")
               else:
-                   print("Данные не найдены в датасете.")
+                   print("データはデータセットに見つかりませんでした.")
 
 
         else:
             try:
                 num3 = float(num3_input)
-                input_values = [num1, num2, num3] #  Преобразовываем к списку
+                input_values = [num1, num2, num3] # リストに変換
 
-                found_index = None  # Найденный индекс
+                found_index = None  # 見つかったインデックス
 
-                for i in range(len(data['X'])):  # Перебираем индексы
+                for i in range(len(data['X'])):  # インデックスを反復処理
                   if np.allclose(data['X'][i], input_values):
-                    found_index = i # запоминаем индекс
+                    found_index = i # インデックスを記憶
                     break
 
 
-                if found_index is not None: # Если нашли соответствие
-                  print(f"Найдено соответствие для X: {data['X'][found_index]}, Y: {data['Y'][found_index]}") #выводим
+                if found_index is not None: # 一致するものが見つかった場合
+                  print(f"X: {data['X'][found_index]}, Y: {data['Y'][found_index]} に一致するものが見つかりました") # 出力
 
-                  confirm_edit = input("Вы хотите отредактировать эти данные? (y/n): ").lower()
+                  confirm_edit = input("このデータを編集しますか? (y/n): ").lower()
                   if confirm_edit == "y":
 
-                      y1 = float(input("Введите новое первое число для Y: "))
-                      y2 = float(input("Введите новое второе число для Y: "))
-                      y3 = float(input("Введите новое третье число для Y: "))
-                      y4 = float(input("Введите новое четвертое число для Y: "))
+                      y1 = float(input("Yの新しい最初の数字を入力してください: "))
+                      y2 = float(input("Yの新しい2番目の数字を入力してください: "))
+                      y3 = float(input("Yの新しい3番目の数字を入力してください: "))
+                      y4 = float(input("Yの新しい4番目の数字を入力してください: "))
                       new_y = [y1, y2, y3, y4]
 
-                      confirm_final = input("Вы уверены, что хотите заменить Y данными {} ? (y/n):".format(new_y)).lower() # добавили подтверждение
+                      confirm_final = input("Yをデータ {} で置き換えますか? (y/n):".format(new_y)).lower() # 確認を追加
 
                       if confirm_final == "y":
                          data['Y'][found_index] = new_y
                          save_data(data=data)
-                         print("Данные успешно отредактированы.")
+                         print("データは正常に編集されました.")
                       else:
-                        print("Редактирование отменено")
+                        print("編集はキャンセルされました")
 
 
                   else:
-                      print("Редактирование отменено.")
+                      print("編集はキャンセルされました.")
 
                 else:
-                    print("Данные не найдены в датасете.")
+                    print("データはデータセットに見つかりませんでした.")
 
 
             except ValueError:
-                print("Ошибка: Пожалуйста, введите корректное число для третьего числа.")
+                print("エラー: 3番目の数字に有効な数字を入力してください.")
 
     except ValueError:
-        print("Ошибка: Пожалуйста, введите корректные числа.")
+        print("エラー: 有効な数字を入力してください.")
     except Exception as e:
-        print(f"Произошла ошибка: {e}")
+        print(f"エラーが発生しました: {e}")
 
 def remove_data(X, Y, data):
-    """Удаляет данные из датасета."""
+    """データセットからデータを削除します."""
     try:
-        num1 = float(input("Введите первое число для поиска X: "))
-        num2 = float(input("Введите второе число для поиска X: "))
-        num3_input = input("Введите третье число для поиска X (или 'all'): ").lower()
+        num1 = float(input("検索するXの最初の数字を入力してください: "))
+        num2 = float(input("検索するXの2番目の数字を入力してください: "))
+        num3_input = input("検索するXの3番目の数字を入力してください (または 'all'): ").lower()
 
         if num3_input == "all":
             third_numbers = np.linspace(1, 10, 10)
@@ -354,22 +348,22 @@ def remove_data(X, Y, data):
                         indices_to_remove.append(i)
 
             if indices_to_remove:
-                print("Найдены следующие соответствия:")
+                print("次の一致するものが見つかりました:")
                 for index in indices_to_remove:
                     print(f"X: {data['X'][index]}, Y: {data['Y'][index]}")
 
-                confirmation = input("Вы уверены, что хотите удалить эти данные? (y/n): ").lower()
+                confirmation = input("これらのデータを削除してもよろしいですか? (y/n): ").lower()
                 if confirmation == "y":
-                    # Удаляем элементы с конца, чтобы не нарушить индексы при удалении
+                    # 削除時にインデックスが壊れないように、最後から要素を削除します
                     for index in sorted(indices_to_remove, reverse=True):
                         del data['X'][index]
                         del data['Y'][index]
                     save_data(data=data)
-                    print("Данные успешно удалены.")
+                    print("データは正常に削除されました.")
                 else:
-                    print("Удаление данных отменено.")
+                    print("データの削除はキャンセルされました.")
             else:
-                print("Данные не найдены в датасете.")
+                print("データはデータセットに見つかりませんでした.")
 
         else:
             try:
@@ -383,118 +377,118 @@ def remove_data(X, Y, data):
                         break
 
                 if found_index is not None:
-                    print(f"Найдено соответствие: X: {data['X'][found_index]}, Y: {data['Y'][found_index]}")
-                    confirmation = input("Вы уверены, что хотите удалить эти данные? (y/n): ").lower()
+                    print(f"一致するものが見つかりました: X: {data['X'][found_index]}, Y: {data['Y'][found_index]}")
+                    confirmation = input("これらのデータを削除してもよろしいですか? (y/n): ").lower()
                     if confirmation == "y":
                         del data['X'][found_index]
                         del data['Y'][found_index]
                         save_data(data=data)
-                        print("Данные успешно удалены.")
+                        print("データは正常に削除されました.")
                     else:
-                        print("Удаление данных отменено.")
+                        print("データの削除はキャンセルされました.")
                 else:
-                    print("Данные не найдены в датасете.")
+                    print("データはデータセットに見つかりませんでした.")
 
             except ValueError:
-                print("Ошибка: Пожалуйста, введите корректное число для третьего числа.")
+                print("エラー: 3番目の数字に有効な数字を入力してください.")
 
     except ValueError:
-        print("Ошибка: Пожалуйста, введите корректные числа.")
+        print("エラー: 有効な数字を入力してください.")
     except Exception as e:
-        print(f"Произошла ошибка: {e}")
+        print(f"エラーが発生しました: {e}")
 
 def delete_model(directory="."):
-    """Удаляет сохраненную модель."""
-    name = input("Введите имя модели для удаления (по умолчанию LoView): ") or "LoView"
+    """保存されたモデルを削除します."""
+    name = input("削除するモデルの名前を入力してください (デフォルトは LoView): ") or "LoView"
     filepath = os.path.join(directory, name)
     try:
-        shutil.rmtree(filepath)  # Используем rmtree для удаления директорий с содержимым
-        print(f"Модель {name} успешно удалена из {directory}")
+        shutil.rmtree(filepath)  # ディレクトリとそのコンテンツを削除するには、rmtree を使用します
+        print(f"モデル {name} は {directory} から正常に削除されました")
     except FileNotFoundError:
-        print(f"Ошибка: Модель {name} не найдена в {directory}")
+        print(f"エラー: モデル {name} は {directory} に見つかりませんでした")
     except OSError as e:
-        print(f"Ошибка при удалении модели: {e}")
+        print(f"モデルの削除中にエラーが発生しました: {e}")
 
 
 
-# 2.  Основной код
+# 2. メインコード
 if __name__ == '__main__':
-    # Задаем размеры слоев
-    n_input = 3  # 3 входные клетки
+    # レイヤーサイズを設定
+    n_input = 3  # 3つの入力セル
     n_hidden = 30000
-    n_output = 4  # 4 выходные клетки
+    n_output = 4  # 4つの出力セル
 
-    # Загрузка данных
+    # データの読み込み
     X, Y, data = load_data()
 
     if X is None or Y is None or data is None:
-        exit() # Завершаем программу, если не удалось загрузить данные
+        exit() # データの読み込みに失敗した場合はプログラムを終了
 
-    # Проверка размерности данных
-    #if X.shape[0] != n_input:
-    #    raise ValueError(f"Размерность входных данных (X.shape[0]={X.shape[0]}) не соответствует ожидаемой (n_input={n_input]).")
-    #if Y.shape[0] != n_output:
-    #    raise ValueError(f"Размерность выходных данных (Y.shape[0]={Y.shape[0]}) не соответствует ожидаемой (n_output={n_output}).")
+    # データサイズチェック
+    if X.shape[0] != n_input:
+        raise ValueError(f"入力データのサイズ (X.shape[0]={X.shape[0]}) が予想されるサイズ (n_input={n_input}) と一致しません.")
+    if Y.shape[0] != n_output:
+        raise ValueError(f"出力データのサイズ (Y.shape[0]={Y.shape[0]}) が予想されるサイズ (n_output={n_output}) と一致しません.")
 
-    # 3. Создание модели TensorFlow
+    # 3. TensorFlow モデルの作成
     model = tf.keras.Sequential([
         tf.keras.layers.Dense(n_hidden, activation='relu', input_shape=(n_input,)),
-        tf.keras.layers.Dense(n_output)  # Линейная активация для регрессии
+        tf.keras.layers.Dense(n_output)  # 回帰用の線形アクティベーション
     ])
 
-    # 4. Компиляция модели
+    # 4. モデルのコンパイル
     model.compile(optimizer='adam', loss='mse')
 
-    # Приветствие
-    print("Добро пожаловать!")
+    # あいさつ
+    print("ようこそ!")
     print_help()
 
-    # Цикл обработки команд
+    # コマンド処理ループ
     while True:
-        command = input("Введите команду (help для списка команд): ").lower()
+        command = input("コマンドを入力してください (コマンド一覧を表示するには help): ").lower()
         clear_screen()
 
         if command == "help":
             print_help()
         elif command == "save":
-            name = input("Введите имя модели (по умолчанию LoView): ") or "LoView"
-            directory = input("Введите директорию сохранения (по умолчанию текущая): ") or "."
+            name = input("モデルの名前を入力してください (デフォルトは LoView): ") or "LoView"
+            directory = input("保存先ディレクトリを入力してください (デフォルトは現在): ") or "."
             save_model(model, name, directory)
         elif command == "load":
-            name = input("Введите имя модели (по умолчанию LoView): ") or "LoView"
-            directory = input("Введите директорию загрузки (по умолчанию текущая): ") or "."
+            name = input("モデルの名前を入力してください (デフォルトは LoView): ") or "LoView"
+            directory = input("ロード元ディレクトリを入力してください (デフォルトは現在): ") or "."
             loaded_model = load_model(name, directory)
             if loaded_model:
-                model = loaded_model # Заменяем текущую модель загруженной
+                model = loaded_model # 現在のモデルをロードされたモデルに置き換えます
         elif command == "train":
             try:
-                epochs = int(input("Введите количество эпох (по умолчанию 100): ") or 100)
+                epochs = int(input("エポック数を入力してください (デフォルトは 100): ") or 100)
                 train_model(model, X, Y, epochs)
             except ValueError:
-                print("Ошибка: Пожалуйста, введите целое число для количества эпох.")
+                print("エラー: エポック数には整数を入力してください.")
         elif command == "use":
             if model is not None:
                 use_model(model)
             else:
-                print("Ошибка: Модель не загружена. Используйте команду 'load' для загрузки модели.")
+                print("エラー: モデルがロードされていません. 'load' コマンドを使用してモデルをロードしてください.")
         elif command == "show":
-             show_data(X, Y)  # Передаём X и Y в функцию show_data
+             show_data(X, Y)  # X と Y を show_data 関数に渡します
         elif command == "add":
              add_data(X, Y, data)
-             # После добавления данных нужно обновить X и Y
-             X, Y, data = load_data() # перезагружаем X, Y и data
+             # データの追加後、X と Y を更新する必要があります
+             X, Y, data = load_data() # X, Y, dataを再ロードします
         elif command == "edit":
             edit_data(X, Y, data)
-            # После редактирования данных нужно обновить X и Y
-            X, Y, data = load_data()  # перезагружаем X, Y и data
+            # データの編集後、X と Y を更新する必要があります
+            X, Y, data = load_data()  # X, Y, dataを再ロードします
         elif command == "remove":
             remove_data(X, Y, data)
-            # После удаления данных нужно обновить X и Y
-            X, Y, data = load_data()  # перезагружаем X, Y и data
+            # データの削除後、X と Y を更新する必要があります
+            X, Y, data = load_data()  # X, Y, dataを再ロードします
         elif command == "delete":
             delete_model()
         elif command == "quit":
-            print("Выход из программы.")
+            print("プログラムを終了します.")
             break
         else:
-            print("Неизвестная команда. Используйте 'help' для просмотра списка команд.")
+            print("不明なコマンドです. コマンド一覧を表示するには 'help' を使用してください.")
