@@ -1,494 +1,605 @@
 import json
 import numpy as np
-import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from tensorflow import keras
+from tensorflow.keras import layers
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import os
-import shutil
+import sys
+import threading
 
-# 1. データローディング (IDS.jsonから)
-def load_data(filepath="IDS.json"):
-    """JSONファイルからデータをロードします."""
+# --- Functions for creating executable ---
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+
+# Загрузка данных из файла IDS.json
+def load_data(filepath):
+    """Загружает данные из JSON файла."""
+    global data_X, data_Y #Access the global X and Y
     try:
         with open(filepath, 'r') as f:
             data = json.load(f)
-            X = np.array(data['X']).T  # Xを転置
-            Y = np.array(data['Y']).T  # Yを転置
-
-            # データ正規化 (例)
-            X = (X - np.mean(X, axis=1, keepdims=True)) / np.std(X, axis=1, keepdims=True) # 標準化
-            Y = (Y - np.mean(Y, axis=1, keepdims=True)) / np.std(Y, axis=1, keepdims=True)  # 標準化
-
-            return X, Y, data  # dataも返します
+        data_X = np.array(data['X'])
+        data_Y = np.array(data['Y'])
+        return data_X, data_Y
     except FileNotFoundError:
-        print(f"エラー: ファイル '{filepath}' が見つかりません.")
-        return None, None, None
+        messagebox.showerror("Error", f"File not found: {filepath}")
+        return None, None
     except json.JSONDecodeError:
-        print(f"エラー: ファイル '{filepath}' から JSON をデコードできません. ファイル形式を確認してください.")
-        return None, None, None
+        messagebox.showerror("Error", f"Invalid JSON format in file: {filepath}")
+        return None, None
     except KeyError as e:
-        print(f"エラー: キー '{e}' が JSON ファイルにありません. JSON が 'X' と 'Y' の配列を含むことを確認してください.")
-        return None, None, None
+        messagebox.showerror("Error", f"Missing key in JSON: {e}")
+        return None, None
+    except Exception as e:
+         messagebox.showerror("Error", f"An unexpected error occurred loading {e}")
+         return None, None
 
-# データの保存 (IDS.jsonへ)
-def save_data(filepath="IDS.json", data=None):
-    """更新されたデータをJSONファイルに保存します."""
-    if data is None:
-        print("エラー: 保存するデータがありません.")
+# Функция для создания и обучения модели
+def create_and_train_model(X_train, y_train, X_test, y_test, epochs=100, batch_size=10, progress_callback=None): # Added progress_callback
+    """Создает, компилирует, обучает и оценивает модель нейронной сети."""
+    hidden_layer_size = 128  # Default value for hidden layer size
+    model = keras.Sequential()
+    model.add(layers.Dense(hidden_layer_size, activation='relu', input_shape=(3,)))
+    model.add(layers.Dense(hidden_layer_size, activation='relu'))
+    model.add(layers.Dense(hidden_layer_size // 2, activation='relu'))  # Новый скрытый слой
+    model.add(layers.Dense(4))  # Выходной слой с 4 нейронами
+
+    model.compile(optimizer='adam', loss='mean_squared_error')
+
+    # Modify the training loop to use the callback
+    history = model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, validation_split=0.2, verbose=0,
+                        callbacks=[keras.callbacks.LambdaCallback(on_epoch_end=lambda epoch, logs: progress_callback(epoch + 1, epochs))])
+
+    test_loss = model.evaluate(X_test, y_test, verbose=0)
+    print(f'Test loss: {test_loss}')
+
+    return model, history, test_loss
+
+# Функция для сохранения модели
+def save_model(model, model_name):
+    """Сохраняет модель в формате keras."""
+    try:
+        model.save(model_name)
+        messagebox.showinfo("Success", f"Model saved as {model_name}")
+        print(f'Model saved as {model_name}')
+    except Exception as e:
+        messagebox.showerror("Error", f"Error saving model: {e}")
+
+# Функция для загрузки модели
+def load_model(model_name):
+    """Загружает модель из файла keras."""
+    try:
+        model = keras.models.load_model(model_name)
+        messagebox.showinfo("Success", f"Model loaded from {model_name}")
+        print(f'Model loaded from {model_name}')
+        return model
+    except FileNotFoundError:
+        messagebox.showerror("Error", f"Model file not found: {model_name}")
+        return None
+    except Exception as e:
+        messagebox.showerror("Error", f"Error loading model: {e}")
+        return None
+
+# --- UI Functions ---
+def predict_data():
+    """Получает данные из полей ввода, делает предсказание и выводит результат."""
+    try:
+        x1 = float(entry_x1.get())
+        x2 = float(entry_x2.get())
+        x3_input = entry_x3.get().lower()
+
+        if x3_input == "all":
+            x3_values = list(range(1, 11))  # Список от 1 до 10 включительно
+        else:
+            try:
+                x3_values = [float(x3_input)]  # Попытка преобразовать введенное значение в число
+            except ValueError:
+                messagebox.showerror("Error", "Invalid input for X3. Please enter a number or 'all'.")
+                return
+
+        if current_model is None:
+            messagebox.showerror("Error", "Model not loaded or trained. Please load or train a model first.")
+            return
+
+        all_predictions = []
+        for x3 in x3_values:
+            input_data = np.array([[x1, x2, x3]])
+            predictions = current_model.predict(input_data, verbose=0)
+            all_predictions.append([round(pred, 2) for pred in predictions[0]]) # Rounded to 2 digits
+
+        # Store predictions in the GUI's dictionary.
+        root.gui_predictions = all_predictions
+
+        update_predictions_answers_display()
+
+    except ValueError:
+        messagebox.showerror("Error", "Invalid input. Please enter numeric values for X1 and X2.")
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred during prediction: {e}")
+
+def show_answer():
+    """Получает данные из полей ввода и показывает соответствующий "правильный ответ" из датасета."""
+    global data_X, data_Y
+
+    if data_X is None or data_Y is None:
+        messagebox.showerror("Error", "Data not loaded. Please load data first.")
         return
 
     try:
-        with open(filepath, 'w') as f:
-            json.dump(data, f, indent=4)  # 読みやすくするためにインデントをつけて書き込み
-        print(f"データは {filepath} に保存されました.")
-    except Exception as e:
-        print(f"データの保存中にエラーが発生しました: {e}")
+        x1 = float(entry_x1.get())
+        x2 = float(entry_x2.get())
+        x3_input = entry_x3.get().lower()
 
-# 画面クリア
-def clear_screen():
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-# ヘルプ表示
-def print_help():
-    print("コマンド一覧:")
-    print("help - 指定されたコマンドの説明 (デフォルトはこのリストを表示)")
-    print("save - 指定された名前とディレクトリでモデルを保存 (デフォルトは LoView で現在のディレクトリ)")
-    print("load - 指定された名前とディレクトリでモデルをロード (デフォルトは LoView で現在のディレクトリ)")
-    print("train - 現在のモデルを指定されたエポック数で学習 (デフォルトは 100 エポック)")
-    print("use - ニューラルネットワークの使用 (3つの数字を入力すると、モデルが4つの数字を返します)")
-    print("show - データセットから、与えられた入力値に対する「正しい」回答を表示 (use と同様)")
-    print("add - データセットへの新しいデータの追加 (X が存在しない場合にのみ)")
-    print("edit - データセット内の既存のデータの編集")
-    print("remove - データセットからのデータの削除")
-    print("delete - 保存されたモデルの削除")
-    print("quit - 終了")
-
-# モデルの保存
-def save_model(model, name="LoView", directory="."):
-    filepath = os.path.join(directory, name)
-    model.save(filepath)
-    print(f"モデルは {filepath} に保存されました.")
-
-# モデルのロード
-def load_model(name="LoView", directory="."):
-    filepath = os.path.join(directory, name)
-    try:
-        model = tf.keras.models.load_model(filepath)
-        print(f"モデルは {filepath} からロードされました.")
-        return model
-    except OSError:
-        print(f"エラー: モデルを {filepath} からロードできませんでした. 名前とパスを確認してください.")
-        return None
-
-# モデルの学習
-def train_model(model, X, Y, epochs=100):
-    print("学習を開始します...")
-    model.fit(X.T, Y.T, epochs=epochs, batch_size=32, verbose=1)
-    print("学習が完了しました.")
-
-# モデルの使用
-def use_model(model):
-    try:
-        num1 = float(input("最初の数字を入力してください: "))
-        num2 = float(input("2番目の数字を入力してください: "))
-        num3 = input("3番目の数字を入力してください (または 'all'): ").lower()
-
-        if num3 == "all":
-            third_numbers = np.linspace(1, 10, 10)  # 1から10までの数字を10個生成
-            for i, third_number in enumerate(third_numbers):
-                new_example = np.array([[num1], [num2], [third_number]])
-                new_example = new_example.T
-                prediction = model.predict(new_example)
-                print(f"3番目の数字 {third_number:.2f} に対する結果: {prediction}")
+        if x3_input == "all":
+            x3_values = list(range(1, 11))  # Список от 1 до 10 включительно
         else:
             try:
-                num3 = float(num3)
-                new_example = np.array([[num1], [num2], [num3]])
-                new_example = new_example.T
-                prediction = model.predict(new_example)
-                print(f"結果: {prediction}")
+                x3_values = [float(x3_input)]  # Попытка преобразовать введенное значение в число
             except ValueError:
-                print("エラー: 3番目の数字に有効な数字を入力してください.")
+                messagebox.showerror("Error", "Invalid input for X3. Please enter a number or 'all'.")
+                return
 
-    except ValueError:
-        print("エラー: 1番目と2番目の数字に有効な数字を入力してください.")
+        all_answers = []
+        for x3 in x3_values:
+            input_data = np.array([x1, x2, x3])  # Convert to numpy array
 
-# データセットからの「正しい」回答の表示
-def show_data(X, Y):  # X と Y を引数として渡す
-    try:
-        num1 = float(input("最初の数字を入力してください: "))
-        num2 = float(input("2番目の数字を入力してください: "))
-        num3 = input("3番目の数字を入力してください (または 'all'): ").lower()
+            # Find the matching data point in the dataset
+            match_index = np.where(np.all(data_X == input_data, axis=1))
 
-        if num3 == "all":
-            third_numbers = np.linspace(1, 10, 10)  # 1から10までの数字を10個生成
-            for i, third_number in enumerate(third_numbers):
-                input_values = np.array([num1, num2, third_number]) # 入力値のベクトルを作成
-                found = False
-                for j in range(X.shape[1]):
-                    if np.allclose(X[:, j], input_values): #Xの各列と比較
-                        print(f"3番目の数字 {third_number:.2f} に対する正しい回答: {Y[:, j]}")
-                        found = True
-                        break  # 一致するものが見つかったので、内側のループから抜けます
-
-                if not found:
-                    print(f"3番目の数字 {third_number:.2f} に対するデータは、データセットに見つかりませんでした.")
-
-        else:
-            try:
-                num3 = float(num3)
-                input_values = np.array([num1, num2, num3])
-                found = False
-                for j in range(X.shape[1]):
-                     if np.allclose(X[:, j], input_values):
-                         print(f"正しい回答: {Y[:, j]}")
-                         found = True
-                         break
-                if not found:
-                    print("データはデータセットに見つかりませんでした.")
-
-            except ValueError:
-                print("エラー: 3番目の数字に有効な数字を入力してください.")
-
-    except ValueError:
-        print("エラー: 1番目と2番目の数字に有効な数字を入力してください.")
-
-def add_data(X, Y, data):
-    """データセットに新しいデータを追加します (Xが存在しない場合のみ)."""
-    try:
-        num1 = float(input("Xの最初の数字を入力してください: "))
-        num2 = float(input("Xの2番目の数字を入力してください: "))
-        num3_input = input("Xの3番目の数字を入力してください (または 'all'): ").lower()
-
-        if num3_input == "all":
-            num3_values = np.linspace(1, 10, 10)  # 3番目の数字の値を10個作成
-
-            # 存在チェック
-            for num3 in num3_values:
-                input_values = [num1, num2, num3]
-                for existing_x in data['X']:
-                    if np.allclose(existing_x, input_values):
-                        print(f"エラー: データ X: {input_values} はすでに存在します. 重複を追加できません.")
-                        return  # 重複が見つかったら関数を終了
-
-            Y_values = []
-            for i in range(len(num3_values)): # 各Xに対してYを要求
-                 y1 = float(input(f"Yの最初の数字を入力してください (X: {num1}, {num2}, {num3_values[i]}): "))
-                 y2 = float(input(f"Yの2番目の数字を入力してください (X: {num1}, {num2}, {num3_values[i]}): "))
-                 y3 = float(input(f"Yの3番目の数字を入力してください (X: {num1}, {num2}, {num3_values[i]}): "))
-                 y4 = float(input(f"Yの4番目の数字を入力してください (X: {num1}, {num2}, {num3_values[i]}): "))
-                 Y_values.append([y1, y2, y3, y4])
-
-            confirmation = input("これらのデータを追加してもよろしいですか? (y/n): ").lower()
-
-            if confirmation == "y":
-
-                for i in range(len(num3_values)):
-                    new_x = [num1, num2, num3_values[i]]
-                    new_y = Y_values[i]
-
-                    data['X'].append(new_x)
-                    data['Y'].append(new_y)
-
-                save_data(data=data)  # 更新されたデータを保存
-                print("データが正常に追加されました.")
-
+            if match_index[0].size > 0:  # Found a match
+                answer = data_Y[match_index[0][0]]  # Get the corresponding answer
+                all_answers.append([round(ans, 2) for ans in answer.tolist()]) # Rounded to 2 digits
             else:
-                print("データの追加はキャンセルされました.")
+                all_answers.append("idk lol")
 
+        # Store answers in the GUI's dictionary.
+        root.gui_answers = all_answers
 
-        else:
-
-            num3 = float(num3_input)  # "all" でない場合は数字に変換
-            input_values = [num1, num2, num3]  # 探しているXを形成
-
-            # 存在チェック
-            for existing_x in data['X']:
-                if np.allclose(existing_x, input_values):
-                    print(f"エラー: データ X: {input_values} はすでに存在します. 重複を追加できません.")
-                    return  # 関数を終了
-
-            y1 = float(input("Yの最初の数字を入力してください: "))
-            y2 = float(input("Yの2番目の数字を入力してください: "))
-            y3 = float(input("Yの3番目の数字を入力してください: "))
-            y4 = float(input("Yの4番目の数字を入力してください: "))
-
-            confirmation = input("このデータを追加してもよろしいですか? (y/n): ").lower()
-
-            if confirmation == "y":
-
-                new_x = [num1, num2, num3]
-                new_y = [y1, y2, y3, y4]
-
-                data['X'].append(new_x)
-                data['Y'].append(new_y)
-
-                save_data(data=data)  # 更新されたデータを保存
-                print("データが正常に追加されました.")
-
-            else:
-                print("データの追加はキャンセルされました.")
+        update_predictions_answers_display()
 
     except ValueError:
-        print("エラー: 有効な数字を入力してください.")
+        messagebox.showerror("Error", "Invalid input. Please enter numeric values for X1 and X2.")
     except Exception as e:
-        print(f"エラーが発生しました: {e}")
+        messagebox.showerror("Error", f"An error occurred: {e}")
+
+def update_predictions_answers_display():
+    """Displays predictions and answers side by side."""
+    predictions = getattr(root, "gui_predictions", [])
+    answers = getattr(root, "gui_answers", [])
+
+    output_text = ""
+    max_lines = max(len(predictions), len(answers))
+
+    for i in range(max_lines):
+        prediction_str = str(predictions[i]) if i < len(predictions) else ""
+        answer_str = str(answers[i]) if i < len(answers) else ""
+        output_text += f"Prediction: {prediction_str:<30} Answer: {answer_str}\n"
+
+    label_prediction.config(text=output_text)
+    print(output_text)
 
 
+def update_progress_bar(epoch, total_epochs):
+    """Updates the progress bar."""
+    progress_value = int((epoch / total_epochs) * 100)
+    progress_bar['value'] = progress_value
+    root.update_idletasks()  # Force UI update
 
-def edit_data(X, Y, data): # dataを引数として追加
-    """データセット内の既存のデータを編集します."""
+def train_model_thread(X_train, y_train, X_test, y_test, epochs, batch_size):
+    """Trains the model in a separate thread."""
+    global current_model, training_history, test_loss  # Declare globals at the beginning
+
     try:
-        num1 = float(input("検索するXの最初の数字を入力してください: "))
-        num2 = float(input("検索するXの2番目の数字を入力してください: "))
-        num3_input = input("検索するXの3番目の数字を入力してください (または 'all'): ").lower()
+        current_model, training_history, test_loss = create_and_train_model(
+            X_train, y_train, X_test, y_test, epochs, batch_size,
+            progress_callback=update_progress_bar  # Pass the callback
+        )
 
-        if num3_input == "all":
-            third_numbers = np.linspace(1, 10, 10)
-            input_values_list = [[num1, num2, num3] for num3 in third_numbers]  # 検索用のリスト
-
-            for input_values in input_values_list:
-              found_index = None # インデックス追跡用
-              for i in range(len(data['X'])):
-                if np.allclose(data['X'][i], input_values):
-                  found_index = i
-                  break
-
-              if found_index is not None:
-                  print(f"X: {data['X'][found_index]}, Y: {data['Y'][found_index]} に一致するものが見つかりました")
-
-                  confirm_edit = input("このデータを編集しますか? (y/n): ").lower()
-                  if confirm_edit == "y":
-
-                      y1 = float(input("Yの新しい最初の数字を入力してください: "))
-                      y2 = float(input("Yの新しい2番目の数字を入力してください: "))
-                      y3 = float(input("Yの新しい3番目の数字を入力してください: "))
-                      y4 = float(input("Yの新しい4番目の数字を入力してください: "))
-                      new_y = [y1, y2, y3, y4]
-
-                      confirm_final = input("Yをデータ {} で置き換えますか? (y/n):".format(new_y)).lower() # 確認を追加
-
-                      if confirm_final == "y":
-                         data['Y'][found_index] = new_y
-                         save_data(data=data)
-                         print("データは正常に編集されました.")
-                      else:
-                        print("編集はキャンセルされました")
+        label_test_loss.config(text=f'Test loss: {test_loss}')
+        messagebox.showinfo("Success", "Model trained successfully.")
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred during training: {e}")
+    finally:
+        progress_bar['value'] = 0  # Reset the progress bar
+        button_train['state'] = 'normal'  # Re-enable the Train button
+        button_show_history['state'] = 'normal'  # Enable the history button after training
 
 
-                  else:
-                      print("編集はキャンセルされました.")
-              else:
-                   print("データはデータセットに見つかりませんでした.")
+def train_model_command():
+    """Обработчик нажатия кнопки "Train Model"."""
+    global X_train, X_test, y_train, y_test
+
+    if X_train is None or y_train is None or X_test is None or y_test is None:
+        messagebox.showerror("Error", "Data not loaded. Please load data first.")
+        return
+
+    try:
+        epochs = int(entry_epochs.get())
+        batch_size = int(entry_batch_size.get())
+    except ValueError:
+        messagebox.showerror("Error", "Invalid input. Please enter integer values for epochs and batch size.")
+        return
+
+    # Disable the Train button to prevent multiple training threads
+    button_train['state'] = 'disabled'
+    button_show_history['state'] = 'disabled'  # Disable the history button during training
+
+    # Start the training process in a separate thread
+    threading.Thread(target=train_model_thread, args=(X_train, y_train, X_test, y_test, epochs, batch_size)).start()
 
 
-        else:
-            try:
-                num3 = float(num3_input)
-                input_values = [num1, num2, num3] # リストに変換
+def load_data_command():
+    """Обработчик нажатия кнопки "Load Data"."""
+    global X_train, X_test, y_train, y_test, data_X, data_Y
+    filepath = filedialog.askopenfilename(title="Select Data File", filetypes=[("JSON files", "*.json"), ("All files", "*.*")])  # File dialog
+    if not filepath:  # User cancelled the dialog
+        return
 
-                found_index = None  # 見つかったインデックス
+    entry_data_path.delete(0, tk.END)  # Clear the entry field
+    entry_data_path.insert(0, filepath) # Set the entry field
 
-                for i in range(len(data['X'])):  # インデックスを反復処理
-                  if np.allclose(data['X'][i], input_values):
-                    found_index = i # インデックスを記憶
-                    break
+    X, y = load_data(filepath)
 
+    if X is not None and y is not None:
+        X = np.array(X)
+        y = np.array(y)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        messagebox.showinfo("Success", "Data loaded successfully.")
+    else:
+        X_train, X_test, y_train, y_test = None, None, None, None
+        data_X, data_Y = None, None
 
-                if found_index is not None: # 一致するものが見つかった場合
-                  print(f"X: {data['X'][found_index]}, Y: {data['Y'][found_index]} に一致するものが見つかりました") # 出力
+def save_model_command():
+    """Обработчик нажатия кнопки "Save Model"."""
+    global current_model
 
-                  confirm_edit = input("このデータを編集しますか? (y/n): ").lower()
-                  if confirm_edit == "y":
+    if current_model is None:
+        messagebox.showerror("Error", "No model to save. Please train or load a model first.")
+        return
 
-                      y1 = float(input("Yの新しい最初の数字を入力してください: "))
-                      y2 = float(input("Yの新しい2番目の数字を入力してください: "))
-                      y3 = float(input("Yの新しい3番目の数字を入力してください: "))
-                      y4 = float(input("Yの新しい4番目の数字を入力してください: "))
-                      new_y = [y1, y2, y3, y4]
+    filepath = filedialog.asksaveasfilename(title="Save Model", defaultextension=".keras", filetypes=[("Keras models", "*.keras"), ("All files", "*.*")])
+    if not filepath:
+        return
 
-                      confirm_final = input("Yをデータ {} で置き換えますか? (y/n):".format(new_y)).lower() # 確認を追加
+    entry_save_path.delete(0, tk.END)
+    entry_save_path.insert(0, filepath)
 
-                      if confirm_final == "y":
-                         data['Y'][found_index] = new_y
-                         save_data(data=data)
-                         print("データは正常に編集されました.")
-                      else:
-                        print("編集はキャンセルされました")
+    model_name = filepath
+    save_model(current_model, model_name)
 
+def load_model_command():
+    """Обработчик нажатия кнопки "Load Model"."""
+    global current_model
 
-                  else:
-                      print("編集はキャンセルされました.")
+    filepath = filedialog.askopenfilename(title="Select Model File", filetypes=[("Keras models", "*.keras"), ("All files", "*.*")])
+    if not filepath:
+        return
 
-                else:
-                    print("データはデータセットに見つかりませんでした.")
+    entry_load_path.delete(0, tk.END)
+    entry_load_path.insert(0, filepath)
 
+    model_name = filepath
+    current_model = load_model(model_name)
 
-            except ValueError:
-                print("エラー: 3番目の数字に有効な数字を入力してください.")
+def plot_training_history(history):
+    """Отображает график истории обучения (loss) в отдельном окне Tkinter."""
+
+    history_window = tk.Toplevel(root)
+    history_window.title("Training History")
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.plot(history.history['loss'], label='loss')
+    ax.plot(history.history['val_loss'], label='val_loss')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Loss')
+    ax.set_title('Training History')
+    ax.legend()
+    fig.tight_layout()
+
+    canvas = FigureCanvasTkAgg(fig, master=history_window)
+    canvas_widget = canvas.get_tk_widget()
+    canvas_widget.pack(fill=tk.BOTH, expand=True)
+    canvas.draw()
+
+def plot_predictions_answers():
+    """Plots the predictions and answers as a function of X3."""
+    global data_X, data_Y
+
+    if data_X is None or data_Y is None:
+        messagebox.showerror("Error", "Data not loaded. Please load data first.")
+        return
+
+    try:
+        x1 = float(entry_x1.get())
+        x2 = float(entry_x2.get())
+
+        # Use extended range for plotting only
+        x3_values = np.arange(0, 10.01, 0.1).tolist()
+
+        if current_model is None:
+            messagebox.showerror("Error", "Model not loaded or trained. Please load or train a model first.")
+            return
+
+        # Create a dictionary to store X3, predictions, and answers
+        plot_data = {}
+        for x3 in x3_values:
+            # Create a single X value.
+            key = (x1, x2, x3)
+
+            # Append prediction to the dictionary.
+            input_data = np.array([[x1, x2, x3]])
+            predictions = current_model.predict(input_data, verbose=0)[0].tolist()
+            plot_data[key] = {"prediction": predictions}
+
+            # Add the answers to the dictionary.
+            input_data = np.array([x1, x2, x3])  # Convert to numpy array
+            match_index = np.where(np.all(data_X == input_data, axis=1))
+            if match_index[0].size > 0:  # Found a match
+                plot_data[key]["answer"] = data_Y[match_index[0][0]].tolist()
+            else:
+                plot_data[key]["answer"] = None
+
+        create_plots(plot_data)
 
     except ValueError:
-        print("エラー: 有効な数字を入力してください.")
+        messagebox.showerror("Error", "Invalid input. Please enter numeric values for X1 and X2.")
     except Exception as e:
-        print(f"エラーが発生しました: {e}")
+        messagebox.showerror("Error", f"An error occurred: {e}")
 
-def remove_data(X, Y, data):
-    """データセットからデータを削除します."""
-    try:
-        num1 = float(input("検索するXの最初の数字を入力してください: "))
-        num2 = float(input("検索するXの2番目の数字を入力してください: "))
-        num3_input = input("検索するXの3番目の数字を入力してください (または 'all'): ").lower()
 
-        if num3_input == "all":
-            third_numbers = np.linspace(1, 10, 10)
-            input_values_list = [[num1, num2, num3] for num3 in third_numbers]
+def create_plots(plot_data):
+    """Create two new windows and plot the prediction and answers data on them."""
 
-            indices_to_remove = []
-            for input_values in input_values_list:
-                for i in range(len(data['X'])):
-                    if np.allclose(data['X'][i], input_values):
-                        indices_to_remove.append(i)
+    # Create the answers window and display the answers.
+    answers_window = tk.Toplevel(root)
+    answers_window.title("Answers")
 
-            if indices_to_remove:
-                print("次の一致するものが見つかりました:")
-                for index in indices_to_remove:
-                    print(f"X: {data['X'][index]}, Y: {data['Y'][index]}")
+    # Create the predictions window and display the predictions.
+    predictions_window = tk.Toplevel(root)
+    predictions_window.title("Predictions")
 
-                confirmation = input("これらのデータを削除してもよろしいですか? (y/n): ").lower()
-                if confirmation == "y":
-                    # 削除時にインデックスが壊れないように、最後から要素を削除します
-                    for index in sorted(indices_to_remove, reverse=True):
-                        del data['X'][index]
-                        del data['Y'][index]
-                    save_data(data=data)
-                    print("データは正常に削除されました.")
-                else:
-                    print("データの削除はキャンセルされました.")
+    x_values = list(plot_data.keys())
+    answers_figure, answers_axes = plt.subplots(figsize=(8, 6))
+    predictions_figure, predictions_axes = plt.subplots(figsize=(8, 6))
+
+    # Plot answers for each of the y-values.
+    for i in range(4):
+        y_values = []
+        for x in x_values:
+            if plot_data[x]["answer"] is not None:
+                y_values.append(plot_data[x]["answer"][i])
             else:
-                print("データはデータセットに見つかりませんでした.")
+                y_values.append(None)
+        # Filter out the x-values that don't have a valid y-value
+        valid_x_values = [x[2] for i, x in enumerate(x_values) if y_values[i] is not None]
+        valid_y_values = [y for y in y_values if y is not None]
 
-        else:
-            try:
-                num3 = float(num3_input)
-                input_values = [num1, num2, num3]
+        answers_axes.plot(valid_x_values, valid_y_values, label=f"Y_{i+1}")
 
-                found_index = None
-                for i in range(len(data['X'])):
-                    if np.allclose(data['X'][i], input_values):
-                        found_index = i
-                        break
+    # Plot predictions for each of the y-values.
+    for i in range(4):
+        y_values = []
+        for x in x_values:
+            y_values.append(plot_data[x]["prediction"][i])
+        predictions_axes.plot([x[2] for x in x_values], y_values, label=f"Y_{i + 1}")
 
-                if found_index is not None:
-                    print(f"一致するものが見つかりました: X: {data['X'][found_index]}, Y: {data['Y'][found_index]}")
-                    confirmation = input("これらのデータを削除してもよろしいですか? (y/n): ").lower()
-                    if confirmation == "y":
-                        del data['X'][found_index]
-                        del data['Y'][found_index]
-                        save_data(data=data)
-                        print("データは正常に削除されました.")
-                    else:
-                        print("データの削除はキャンセルされました.")
-                else:
-                    print("データはデータセットに見つかりませんでした.")
+    # Add some plot fluff.
+    answers_axes.set_xlabel("X3")
+    answers_axes.set_ylabel("Answer Values")
+    answers_axes.set_title("Answers vs. X3")
+    answers_axes.legend()
+    answers_axes.grid(True)
 
-            except ValueError:
-                print("エラー: 3番目の数字に有効な数字を入力してください.")
+    # Add some plot fluff.
+    predictions_axes.set_xlabel("X3")
+    predictions_axes.set_ylabel("Predicted Values")
+    predictions_axes.set_title("Predictions vs. X3")
+    predictions_axes.legend()
+    predictions_axes.grid(True)
 
-    except ValueError:
-        print("エラー: 有効な数字を入力してください.")
-    except Exception as e:
-        print(f"エラーが発生しました: {e}")
+    # Show the answers on the window.
+    answers_canvas = FigureCanvasTkAgg(answers_figure, master=answers_window)
+    answers_canvas_widget = answers_canvas.get_tk_widget()
+    answers_canvas_widget.pack(fill=tk.BOTH, expand=True)
+    answers_canvas.draw()
 
-def delete_model(directory="."):
-    """保存されたモデルを削除します."""
-    name = input("削除するモデルの名前を入力してください (デフォルトは LoView): ") or "LoView"
-    filepath = os.path.join(directory, name)
-    try:
-        shutil.rmtree(filepath)  # ディレクトリとそのコンテンツを削除するには、rmtree を使用します
-        print(f"モデル {name} は {directory} から正常に削除されました")
-    except FileNotFoundError:
-        print(f"エラー: モデル {name} は {directory} に見つかりませんでした")
-    except OSError as e:
-        print(f"モデルの削除中にエラーが発生しました: {e}")
+    # Show the predictions on the window.
+    predictions_canvas = FigureCanvasTkAgg(predictions_figure, master=predictions_window)
+    predictions_canvas_widget = predictions_canvas.get_tk_widget()
+    predictions_canvas_widget.pack(fill=tk.BOTH, expand=True)
+    predictions_canvas.draw()
 
 
+def open_graphs():
+    """Opens the predictions/answers plots."""
+    plot_predictions_answers()
 
-# 2. メインコード
-if __name__ == '__main__':
-    # レイヤーサイズを設定
-    n_input = 3  # 3つの入力セル
-    n_hidden = 30000
-    n_output = 4  # 4つの出力セル
+def open_training_history():
+    """Opens the training history plot."""
+    global training_history
 
-    # データの読み込み
-    X, Y, data = load_data()
+    if training_history is None:
+        messagebox.showerror("Error", "No training history available. Please train a model first.")
+        return
 
-    if X is None or Y is None or data is None:
-        exit() # データの読み込みに失敗した場合はプログラムを終了
+    plot_training_history(training_history)
 
-    # データサイズチェック
-    if X.shape[0] != n_input:
-        raise ValueError(f"入力データのサイズ (X.shape[0]={X.shape[0]}) が予想されるサイズ (n_input={n_input}) と一致しません.")
-    if Y.shape[0] != n_output:
-        raise ValueError(f"出力データのサイズ (Y.shape[0]={Y.shape[0]}) が予想されるサイズ (n_output={n_output}) と一致しません.")
+def toggle_fullscreen():
+    """Toggles fullscreen mode."""
+    global is_fullscreen
+    is_fullscreen = not is_fullscreen  # Toggle the boolean
+    root.attributes("-fullscreen", is_fullscreen)
 
-    # 3. TensorFlow モデルの作成
-    model = tf.keras.Sequential([
-        tf.keras.layers.Dense(n_hidden, activation='relu', input_shape=(n_input,)),
-        tf.keras.layers.Dense(n_output)  # 回帰用の線形アクティベーション
-    ])
+def on_mousewheel(event):
+    """Handles mousewheel scrolling with increased delta."""
+    canvas.yview_scroll(int(-1*(event.delta/120)*10), "units") # Increase scroll speed by factor of 10
 
-    # 4. モデルのコンパイル
-    model.compile(optimizer='adam', loss='mse')
+# --- Global Variables ---
+X_train, X_test, y_train, y_test = None, None, None, None
+current_model = None
+training_history = None
+test_loss = None
+data_X = None
+data_Y = None
+is_fullscreen = False #Variable for fullscreen
 
-    # あいさつ
-    print("ようこそ!")
-    print_help()
+# --- UI Setup ---
+root = tk.Tk()
+root.title("LoViewer")
 
-    # コマンド処理ループ
-    while True:
-        command = input("コマンドを入力してください (コマンド一覧を表示するには help): ").lower()
-        clear_screen()
+# Get screen width and height
+screen_width = root.winfo_screenwidth()
+screen_height = root.winfo_screenheight()
 
-        if command == "help":
-            print_help()
-        elif command == "save":
-            name = input("モデルの名前を入力してください (デフォルトは LoView): ") or "LoView"
-            directory = input("保存先ディレクトリを入力してください (デフォルトは現在): ") or "."
-            save_model(model, name, directory)
-        elif command == "load":
-            name = input("モデルの名前を入力してください (デフォルトは LoView): ") or "LoView"
-            directory = input("ロード元ディレクトリを入力してください (デフォルトは現在): ") or "."
-            loaded_model = load_model(name, directory)
-            if loaded_model:
-                model = loaded_model # 現在のモデルをロードされたモデルに置き換えます
-        elif command == "train":
-            try:
-                epochs = int(input("エポック数を入力してください (デフォルトは 100): ") or 100)
-                train_model(model, X, Y, epochs)
-            except ValueError:
-                print("エラー: エポック数には整数を入力してください.")
-        elif command == "use":
-            if model is not None:
-                use_model(model)
-            else:
-                print("エラー: モデルがロードされていません. 'load' コマンドを使用してモデルをロードしてください.")
-        elif command == "show":
-             show_data(X, Y)  # X と Y を show_data 関数に渡します
-        elif command == "add":
-             add_data(X, Y, data)
-             # データの追加後、X と Y を更新する必要があります
-             X, Y, data = load_data() # X, Y, dataを再ロードします
-        elif command == "edit":
-            edit_data(X, Y, data)
-            # データの編集後、X と Y を更新する必要があります
-            X, Y, data = load_data()  # X, Y, dataを再ロードします
-        elif command == "remove":
-            remove_data(X, Y, data)
-            # データの削除後、X と Y を更新する必要があります
-            X, Y, data = load_data()  # X, Y, dataを再ロードします
-        elif command == "delete":
-            delete_model()
-        elif command == "quit":
-            print("プログラムを終了します.")
-            break
-        else:
-            print("不明なコマンドです. コマンド一覧を表示するには 'help' を使用してください.")
+# Calculate 1.5 times the screen width for a wider window
+window_width = int(screen_width * 1.5)
+# Use a max width to limit the window size
+max_window_width = 1200
+window_width = min(window_width, max_window_width)
+
+# Reduce the height by 30%
+window_height = int(screen_height * 0.7)  # Reduce by 30%
+
+# Set window position
+x = (screen_width - window_width) // 2
+y = (screen_height - window_height) // 2
+
+root.geometry(f"{window_width}x{window_height}+{x}+{y}")
+
+icon_path = resource_path("lo.ico")
+root.iconbitmap(icon_path) # Set the icon
+# Remove window resizing ability
+root.resizable(False, False)
+
+# --- Main Frame with Scrollbar ---
+main_frame = ttk.Frame(root, padding=10)
+main_frame.pack(fill=tk.BOTH, expand=True)
+
+canvas = tk.Canvas(main_frame)
+canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+scrollbar = ttk.Scrollbar(main_frame, orient=tk.VERTICAL, command=canvas.yview)
+scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+canvas.configure(yscrollcommand=scrollbar.set)
+canvas.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+inner_frame = ttk.Frame(canvas, padding=10)
+canvas.create_window((0, 0), window=inner_frame, anchor="nw")
+
+# Bind mousewheel scrolling to the canvas
+canvas.bind_all("<MouseWheel>", on_mousewheel)
+
+# --- Data Loading Frame ---
+frame_data = ttk.LabelFrame(inner_frame, text="Data Loading", padding=10)
+frame_data.pack(fill=tk.X, padx=10, pady=10)
+
+label_data_path = ttk.Label(frame_data, text="Data File Path:")
+label_data_path.pack(side=tk.LEFT, padx=5)
+entry_data_path = ttk.Entry(frame_data, width=50)
+entry_data_path.insert(0, 'IDS.json') # Default value
+entry_data_path.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
+button_load_data = ttk.Button(frame_data, text="Load Data", command=load_data_command)
+button_load_data.pack(side=tk.LEFT, padx=5)
+
+# --- Model Training Frame ---
+frame_training = ttk.LabelFrame(inner_frame, text="Model Training", padding=10)
+frame_training.pack(fill=tk.X, padx=10, pady=10)
+
+label_epochs = ttk.Label(frame_training, text="Epochs:")
+label_epochs.pack(side=tk.LEFT, padx=5)
+entry_epochs = ttk.Entry(frame_training, width=10)
+entry_epochs.insert(0, "100")  # Default value
+entry_epochs.pack(side=tk.LEFT, padx=5)
+
+label_batch_size = ttk.Label(frame_training, text="Batch Size:")
+label_batch_size.pack(side=tk.LEFT, padx=5)
+entry_batch_size = ttk.Entry(frame_training, width=10)
+entry_batch_size.insert(0, "10")  # Default value
+entry_batch_size.pack(side=tk.LEFT, padx=5)
+
+button_train = ttk.Button(frame_training, text="Train Model", command=train_model_command)
+button_train.pack(side=tk.LEFT, padx=5)
+
+# Progress Bar
+progress_bar = ttk.Progressbar(frame_training, orient=tk.HORIZONTAL, length=200, mode='determinate')
+progress_bar.pack(side=tk.LEFT, padx=5)
+
+# Button to show training history (initially disabled)
+button_show_history = ttk.Button(frame_training, text="Show History", command=open_training_history, state='disabled')
+button_show_history.pack(side=tk.LEFT, padx=5)
+
+label_test_loss = ttk.Label(frame_training, text="Test Loss: N/A")
+label_test_loss.pack(side=tk.LEFT, padx=5)
+
+# --- Prediction Frame ---
+frame_prediction = ttk.LabelFrame(inner_frame, text="Prediction", padding=10)
+frame_prediction.pack(fill=tk.X, padx=10, pady=10)
+
+label_x1 = ttk.Label(frame_prediction, text="X1:")
+label_x1.pack(side=tk.LEFT, padx=5)
+entry_x1 = ttk.Entry(frame_prediction, width=10)
+entry_x1.pack(side=tk.LEFT, padx=5)
+
+label_x2 = ttk.Label(frame_prediction, text="X2:")
+label_x2.pack(side=tk.LEFT, padx=5)
+entry_x2 = ttk.Entry(frame_prediction, width=10)
+entry_x2.pack(side=tk.LEFT, padx=5)
+
+label_x3 = ttk.Label(frame_prediction, text="X3 (Number or 'all'):")
+label_x3.pack(side=tk.LEFT, padx=5)
+entry_x3 = ttk.Entry(frame_prediction, width=20)
+entry_x3.pack(side=tk.LEFT, padx=5)
+
+button_predict = ttk.Button(frame_prediction, text="Predict", command=predict_data)
+button_predict.pack(side=tk.LEFT, padx=5)
+
+button_show = ttk.Button(frame_prediction, text="Show Answer", command=show_answer)
+button_show.pack(side=tk.LEFT, padx=5)
+
+#Label for prections
+label_prediction = ttk.Label(inner_frame, text="", wraplength=window_width - 50)  # Adjust wraplength as needed
+label_prediction.pack(fill=tk.X, padx=10, pady=5)
+
+
+# --- Model Save/Load Frame ---
+frame_model = ttk.LabelFrame(inner_frame, text="Model Save/Load", padding=10)
+frame_model.pack(fill=tk.X, padx=10, pady=10)
+
+label_save_path = ttk.Label(frame_model, text="Save Model Path:")
+label_save_path.pack(side=tk.LEFT, padx=5)
+entry_save_path = ttk.Entry(frame_model, width=40)
+entry_save_path.insert(0, "my_model.keras")  # Default value
+entry_save_path.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
+button_save_model = ttk.Button(frame_model, text="Save Model", command=save_model_command)
+button_save_model.pack(side=tk.LEFT, padx=5)
+
+label_load_path = ttk.Label(frame_model, text="Load Model Path:")
+label_load_path.pack(side=tk.LEFT, padx=5)
+entry_load_path = ttk.Entry(frame_model, width=40)
+entry_load_path.insert(0, "my_model.keras")  # Default value
+entry_load_path.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
+button_load_model = ttk.Button(frame_model, text="Load Model", command=load_model_command)
+button_load_model.pack(side=tk.LEFT, padx=5)
+
+# --- Graphs Button ---
+button_graphs = ttk.Button(inner_frame, text="Graphs", command=open_graphs)
+button_graphs.pack(side=tk.LEFT, padx=5)
+
+# --- Fullscreen Button ---
+button_fullscreen = ttk.Button(inner_frame, text="Fullscreen", command=toggle_fullscreen)
+button_fullscreen.pack(side=tk.LEFT, padx=5)
+
+root.mainloop()
