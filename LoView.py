@@ -6,7 +6,7 @@ from tensorflow.keras import layers
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import os
 import sys
 import threading
@@ -52,7 +52,7 @@ def create_and_train_model(X_train, y_train, X_test, y_test, epochs=100, batch_s
     hidden_layer_size = 128  # Default value for hidden layer size
     model = keras.Sequential()
     model.add(layers.Dense(hidden_layer_size, activation='relu', input_shape=(3,)))
-    model.add(layers.Dense(hidden_layer_size, activation='relu'))
+    model.add(layers.Dense(hidden_layer_size, activation='relu')),
     model.add(layers.Dense(hidden_layer_size // 2, activation='relu'))  # Новый скрытый слой
     model.add(layers.Dense(4))  # Выходной слой с 4 нейронами
 
@@ -310,7 +310,12 @@ def plot_training_history(history):
 
     canvas = FigureCanvasTkAgg(fig, master=history_window)
     canvas_widget = canvas.get_tk_widget()
-    canvas_widget.pack(fill=tk.BOTH, expand=True)
+    canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    toolbar = NavigationToolbar2Tk(canvas, history_window)
+    toolbar.update()
+    canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
     canvas.draw()
 
 def plot_predictions_answers():
@@ -322,11 +327,11 @@ def plot_predictions_answers():
         return
 
     try:
-        x1 = float(entry_x1.get())
-        x2 = float(entry_x2.get())
+        x1_val = float(entry_x1.get())
+        x2_val = float(entry_x2.get())
 
         # Use extended range for plotting only
-        x3_values = np.arange(0, 10.01, 0.1).tolist()
+        x3_values = np.arange(0, 10.01, 0.01).tolist()
 
         if current_model is None:
             messagebox.showerror("Error", "Model not loaded or trained. Please load or train a model first.")
@@ -336,22 +341,22 @@ def plot_predictions_answers():
         plot_data = {}
         for x3 in x3_values:
             # Create a single X value.
-            key = (x1, x2, x3)
+            key = (x1_val, x2_val, x3)
 
             # Append prediction to the dictionary.
-            input_data = np.array([[x1, x2, x3]])
+            input_data = np.array([[x1_val, x2_val, x3]])
             predictions = current_model.predict(input_data, verbose=0)[0].tolist()
             plot_data[key] = {"prediction": predictions}
 
             # Add the answers to the dictionary.
-            input_data = np.array([x1, x2, x3])  # Convert to numpy array
+            input_data = np.array([x1_val, x2_val, x3])  # Convert to numpy array
             match_index = np.where(np.all(data_X == input_data, axis=1))
             if match_index[0].size > 0:  # Found a match
                 plot_data[key]["answer"] = data_Y[match_index[0][0]].tolist()
             else:
                 plot_data[key]["answer"] = None
 
-        create_plots(plot_data)
+        create_plots(plot_data, x1_val, x2_val)  # Pass x1_val and x2_val
 
     except ValueError:
         messagebox.showerror("Error", "Invalid input. Please enter numeric values for X1 and X2.")
@@ -359,16 +364,16 @@ def plot_predictions_answers():
         messagebox.showerror("Error", f"An error occurred: {e}")
 
 
-def create_plots(plot_data):
+def create_plots(plot_data, x1_val, x2_val):
     """Create two new windows and plot the prediction and answers data on them."""
 
     # Create the answers window and display the answers.
     answers_window = tk.Toplevel(root)
-    answers_window.title("Answers")
+    answers_window.title(f"Answers of Se{x1_val}Ep{x2_val}") # Set the title of the window
 
     # Create the predictions window and display the predictions.
     predictions_window = tk.Toplevel(root)
-    predictions_window.title("Predictions")
+    predictions_window.title(f"Prediction of Se{x1_val}Ep{x2_val}") # Set the title of the window
 
     x_values = list(plot_data.keys())
     answers_figure, answers_axes = plt.subplots(figsize=(8, 6))
@@ -409,16 +414,24 @@ def create_plots(plot_data):
     predictions_axes.legend()
     predictions_axes.grid(True)
 
-    # Show the answers on the window.
+    # --- Add Matplotlib toolbar to the Answers Window ---
     answers_canvas = FigureCanvasTkAgg(answers_figure, master=answers_window)
     answers_canvas_widget = answers_canvas.get_tk_widget()
-    answers_canvas_widget.pack(fill=tk.BOTH, expand=True)
+    answers_canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    answers_toolbar = NavigationToolbar2Tk(answers_canvas, answers_window)
+    answers_toolbar.update()
+    answers_canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
     answers_canvas.draw()
 
-    # Show the predictions on the window.
+    # --- Add Matplotlib toolbar to the Predictions Window ---
     predictions_canvas = FigureCanvasTkAgg(predictions_figure, master=predictions_window)
     predictions_canvas_widget = predictions_canvas.get_tk_widget()
-    predictions_canvas_widget.pack(fill=tk.BOTH, expand=True)
+    predictions_canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    predictions_toolbar = NavigationToolbar2Tk(predictions_canvas, predictions_window)
+    predictions_toolbar.update()
+    predictions_canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
     predictions_canvas.draw()
 
 
@@ -478,7 +491,7 @@ y = (screen_height - window_height) // 2
 
 root.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
-icon_path = resource_path("lo.ico")
+icon_path = resource_path("lo.ico")  # Replace with your icon file
 root.iconbitmap(icon_path) # Set the icon
 # Remove window resizing ability
 root.resizable(False, False)
