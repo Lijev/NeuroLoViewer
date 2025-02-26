@@ -27,3 +27,17 @@ Px & Py - coordinates of complex number in plane of Plot.
 (-1.0 ; -1.0) like "WOW! NEW GUY"
 
 every number (E-P x-y) in range [-1.0 ; 1.0]
+
+| Ex  | Ey  | Emotion      |
+|-----|-----|--------------|
+| -1  | -1  | Anger        |
+| -1  |  0  | Disgust      |
+| -1  |  1  | Love         |
+|  0  | -1  | Sadness      |
+|  0  |  0  | Neutral      |
+|  0  |  1  | Joy          |
+|  1  | -1  | Fear         |
+|  1  |  0  | Anticipation |
+|  1  |  1  | Trust        |
+
+This table maps the 9 basic emotions to specific coordinates in the Emotion plane as described in your query. Each emotion is associated with a unique combination of Ex and Ey values, ranging from -1 to 1 in increments of 1. This representation allows for a simple yet effective way to encode emotions in a two-dimensional space, which can be useful for various machine learning and data analysis tasks related to emotion prediction and classification.
