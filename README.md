@@ -9,9 +9,9 @@ every number (E-P x-y) in range [-1.0 ; 1.0]
 
 | Ex  | Ey  |       Describing       |
 |-----|-----|------------------------|
-| -1  | -1  | "I hate you"           |
-| -1  |  0  | "I dont know you"      |
-| -1  |  1  | "I love you"           |
+| -1  | -1  | Hate                   |
+| -1  |  0  | Nescience              |
+| -1  |  1  | Love                   |
 |  0  | -1  | Sadness                |
 |  0  |  0  | Neutral                |
 |  0  |  1  | Joy                    |
