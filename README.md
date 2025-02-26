@@ -1,43 +1,36 @@
-Simple neural network for predicting future episode's describings of any art.
+LoViewer is simple neural network for predicting future episode's describings of any art.
+
 Dataset tutorial:
 X - Input (Season, Episode, chunk)
 Y - Output (Ex,Ey,Px,Py)
 Chunk = 10% of Episode(time)
 
-Ex & Ey - coordinates of complex number in plane of Emotion.
-(1.0 ; 1.0) like "Thankfully"
-(1.0 ; 0.0) like "I dont care about you"
-(1.0 ; -1.0) like "Im afraid"
-(0.0 ; 1.0) like "Im happy"
-(0.0 ; 0.0) like "chill, stone, sigma"
-(0.0 ; -1.0) like "im sad"
-(-1.0 ; 1.0) like "I love you"
-(-1.0 ; 0.0) like "I dont know you"
-(-1.0 ; -1.0) like " I hate you"
-
-Px & Py - coordinates of complex number in plane of Plot.
-(1.0 ; 1.0) like "Do you remember this plottwist?"
-(1.0 ; 0.0) like "Do you remember this place?"
-(1.0 ; -1.0) like "Do you remember this guy?"
-(0.0 ; 1.0) like "Plottwist"
-(0.0 ; 0.0) like "Place"
-(0.0 ; -1.0) like "Guy"
-(-1.0 ; 1.0) like "WOW! PLOTTWIST"
-(-1.0 ; 0.0) like "WOW! NEW PLACE"
-(-1.0 ; -1.0) like "WOW! NEW GUY"
-
 every number (E-P x-y) in range [-1.0 ; 1.0]
 
-| Ex  | Ey  | Emotion      |
-|-----|-----|--------------|
-| -1  | -1  | Anger        |
-| -1  |  0  | Disgust      |
-| -1  |  1  | Love         |
-|  0  | -1  | Sadness      |
-|  0  |  0  | Neutral      |
-|  0  |  1  | Joy          |
-|  1  | -1  | Fear         |
-|  1  |  0  | Anticipation |
-|  1  |  1  | Trust        |
+| Ex  | Ey  |       Describing       |
+|-----|-----|------------------------|
+| -1  | -1  | "I hate you"           |
+| -1  |  0  | "I dont know you"      |
+| -1  |  1  | "I love you"           |
+|  0  | -1  | Sadness                |
+|  0  |  0  | Neutral                |
+|  0  |  1  | Joy                    |
+|  1  | -1  | Fear                   |
+|  1  |  0  | Indifference           |
+|  1  |  1  | Trust                  |
 
 This table maps the 9 basic emotions to specific coordinates in the Emotion plane as described in your query. Each emotion is associated with a unique combination of Ex and Ey values, ranging from -1 to 1 in increments of 1. This representation allows for a simple yet effective way to encode emotions in a two-dimensional space, which can be useful for various machine learning and data analysis tasks related to emotion prediction and classification.
+
+| Px  | Py  |              Describing                  |
+|-----|-----|------------------------------------------|
+| -1  | -1  | “New [minor information]!”               |
+| -1  |  0  | "New [information]!"                     |
+| -1  |  1  | "New [major information]!"               |
+|  0  | -1  | "Just [minor information]."              |
+|  0  |  0  | "Just [information]."                    |
+|  0  |  1  | "Just [major information]."              |
+|  1  | -1  | "Old [minor information]?"               |
+|  1  |  0  | "Old [information]"                      |
+|  1  |  1  | "Old [major information]"                |
+
+This table encodes plot elements and their status using a Storytelling coordinate system. Each combination of Px and Py coordinates corresponds to a specific type of information, describing its importance to the overall narrative and its place within the story’s timeline. Px and Py values range from -1 to 1 in increments of 1, providing 9 distinct categories for classifying plot elements in games, literature, or other forms of storytelling. This system allows for structuring and analyzing information, facilitating the tracking of key moments and their relationships within the world.
