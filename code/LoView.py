@@ -10,6 +10,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import os
 import sys
 import threading
+import configparser  # For saving settings
 
 # Global variables (initialized to None)
 X_train, X_test, y_train, y_test = None, None, None, None
@@ -20,6 +21,10 @@ data_X = None
 data_Y = None
 is_fullscreen = False
 
+# Configuration file setup
+CONFIG_FILE = "config.ini"
+config = configparser.ConfigParser()
+config.read(CONFIG_FILE)
 
 def resource_path(relative_path):
     """
@@ -37,10 +42,9 @@ def resource_path(relative_path):
         base_path = sys._MEIPASS
     except Exception:
         # If running as a script
-        base_path = os.path.abspath(".")
+        base_path = os.path.abspath("../data/")
 
     return os.path.join(base_path, relative_path)
-
 
 def load_data(filepath):
     """
@@ -137,6 +141,11 @@ def save_model(model, model_name):
         model.save(model_name)
         messagebox.showinfo("Success", f"Model saved as {model_name}")
         print(f'Model saved as {model_name}')
+
+        # Save to config
+        config['Paths']['save_path'] = model_name
+        save_config()
+
     except Exception as e:
         messagebox.showerror("Error", f"Error saving model: {e}")
 
@@ -155,6 +164,11 @@ def load_model(model_name):
         model = keras.models.load_model(model_name)
         messagebox.showinfo("Success", f"Model loaded from {model_name}")
         print(f'Model loaded from {model_name}')
+
+        # Save to config
+        config['Paths']['load_path'] = model_name
+        save_config()
+
         return model
     except FileNotFoundError:
         messagebox.showerror("Error", f"Model file not found: {model_name}")
@@ -315,7 +329,7 @@ def train_model_thread(X_train, y_train, X_test, y_test, epochs, batch_size):
         )
 
         # Update the test loss label in the GUI
-        label_test_loss.config(text=f'Test loss: {test_loss}')
+        label_test_loss.config(text=f'Test loss: {test_loss:.4f}')
         messagebox.showinfo("Success", "Model trained successfully.")
 
     except Exception as e:
@@ -385,6 +399,10 @@ def load_data_command():
         y = np.array(y)
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         messagebox.showinfo("Success", "Data loaded successfully.")
+
+        # Save to config
+        config['Paths']['data_path'] = filepath
+        save_config()
     else:
         # If data loading fails, reset the training and testing sets
         X_train, X_test, y_train, y_test = None, None, None, None
@@ -666,17 +684,95 @@ def on_mousewheel(event):
     """
     canvas.yview_scroll(int(-1 * (event.delta / 120) * 10), "units")
 
+def save_config():
+    """Saves the configuration to the config file."""
+    with open(CONFIG_FILE, 'w') as configfile:
+        config.write(configfile)
+
+def load_config():
+    """Loads the configuration from the config file."""
+    global config
+    if os.path.exists(CONFIG_FILE):
+        config.read(CONFIG_FILE)
+    else:
+        # Create the 'Paths' section if it doesn't exist
+        if 'Paths' not in config:
+            config['Paths'] = {}
+        # Initialize the paths in the config
+        config['Paths']['data_path'] = ''
+        config['Paths']['save_path'] = ''
+        config['Paths']['load_path'] = ''
+        save_config()  # Save the initialized config to the file
+
+class ToolTip:
+    def __init__(self, widget, text=''):
+        self.widget = widget
+        self.text = text
+        self.tooltip_window = None
+
+        self.widget.bind("<Enter>", self.show_tooltip)
+        self.widget.bind("<Leave>", self.hide_tooltip)
+
+    def show_tooltip(self, event=None):
+        """Show the tooltip immediately."""
+        self._show()
+
+    def _show(self):
+        """Actually create and show the tooltip window."""
+        x, y, _, _ = self.widget.bbox("insert")
+        x += self.widget.winfo_rootx() + 25
+        y += self.widget.winfo_rooty() + 25
+
+        # creates a toplevel window
+        self.tooltip_window = tk.Toplevel(self.widget)
+
+        # Leaves only the label and removes the app window
+        self.tooltip_window.wm_overrideredirect(True)
+        self.tooltip_window.wm_geometry(f"+{x}+{y}")
+
+        label = tk.Label(self.tooltip_window, text=self.text, background="#ffffe0",
+                           relief="solid", borderwidth=1, font=("arial", "10", "normal"))
+        label.pack()
+
+    def hide_tooltip(self, event=None):
+        """Hide the tooltip."""
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+        self.tooltip_window = None
 
 # Initialize the main Tkinter window
 root = tk.Tk()
 root.title("LoViewer")
 
+# Load configuration
+load_config()
+
+# --- Color Palette ---
+BG_COLOR = "#E6EE9C"  # Light Yellow-Green
+FRAME_BG = "#F0F4C3"   # Lighter Yellow-Green
+BUTTON_BG = "#AED581"  # Medium Green
+BUTTON_FG = "#33691E"  # Dark Green
+LABEL_BG = BG_COLOR
+LABEL_FG = "#2E7D32"  # Darker Green
+ENTRY_BG = "#FFFFCC"
+ENTRY_FG = "black"
+
+# Apply a Modern Theme
+style = ttk.Style()
+style.theme_use('clam')  # ('clam', 'alt', 'default', 'classic', 'vista', 'xp')
+
+# Configure some basic style elements - Customize these!
+style.configure("TLabel", font=('Arial', 10), background=LABEL_BG, foreground=LABEL_FG)
+style.configure("TButton", font=('Arial', 10, 'bold'), padding=8, background=BUTTON_BG, foreground=BUTTON_FG)
+style.configure("TEntry", font=('Arial', 10), background=ENTRY_BG, foreground=ENTRY_FG)
+style.configure("TFrame", background=FRAME_BG) # Light background
+style.configure("TLabelframe", background=FRAME_BG)
+style.configure("TLabelframe.Label", font=('Arial', 10, 'bold'))
+
 # Configure window size and position
 screen_width = root.winfo_screenwidth()
 screen_height = root.winfo_screenheight()
-window_width = int(screen_width * 1.5)
-max_window_width = 1200  # setting the maximun screen window width
-window_width = min(window_width, max_window_width)  # fixing main screen size
+window_width = int(screen_width * 0.45)  # Reduced width
 window_height = int(screen_height * 0.7)
 x = (screen_width - window_width) // 2
 y = (screen_height - window_height) // 2
@@ -688,13 +784,14 @@ root.iconbitmap(icon_path)
 
 # Disable window resizing
 root.resizable(False, False)
+root.configure(background=BG_COLOR)
 
 # Create main frame
 main_frame = ttk.Frame(root, padding=10)
 main_frame.pack(fill=tk.BOTH, expand=True)
 
 # Create canvas and scrollbar for scrollable content
-canvas = tk.Canvas(main_frame)
+canvas = tk.Canvas(main_frame, bd=0, highlightthickness=0, background=BG_COLOR)  # Remove border
 canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
 scrollbar = ttk.Scrollbar(main_frame, orient=tk.VERTICAL, command=canvas.yview)
@@ -710,111 +807,142 @@ canvas.create_window((0, 0), window=inner_frame, anchor="nw")
 # Bind mousewheel scrolling
 canvas.bind_all("<MouseWheel>", on_mousewheel)
 
-# Data Loading section
+# -------------------- Data Loading Section --------------------
 frame_data = ttk.LabelFrame(inner_frame, text="Data Loading", padding=10)
-frame_data.pack(fill=tk.X, padx=10, pady=10)
+frame_data.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
 
 label_data_path = ttk.Label(frame_data, text="Data File Path:")
-label_data_path.pack(side=tk.LEFT, padx=5)
+label_data_path.grid(row=0, column=0, sticky="w", padx=5, pady=5)
 
 entry_data_path = ttk.Entry(frame_data, width=50)
-entry_data_path.insert(0, 'IDS.json')
-entry_data_path.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
+entry_data_path.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+entry_data_path.insert(0, config['Paths'].get('data_path', 'IDS.json'))  # Load from config
+frame_data.columnconfigure(1, weight=1) # Make entry stretch
 
 button_load_data = ttk.Button(frame_data, text="Load Data", command=load_data_command)
-button_load_data.pack(side=tk.LEFT, padx=5)
+button_load_data.grid(row=0, column=2, sticky="e", padx=5, pady=5)
+ToolTip(button_load_data, text="Load data from JSON file.\nHotkey: Ctrl+L")
 
-# Model Training section
+# -------------------- Model Training Section --------------------
 frame_training = ttk.LabelFrame(inner_frame, text="Model Training", padding=10)
-frame_training.pack(fill=tk.X, padx=10, pady=10)
+frame_training.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
 
 label_epochs = ttk.Label(frame_training, text="Epochs:")
-label_epochs.pack(side=tk.LEFT, padx=5)
+label_epochs.grid(row=0, column=0, sticky="w", padx=5, pady=5)
 
 entry_epochs = ttk.Entry(frame_training, width=10)
 entry_epochs.insert(0, "100")
-entry_epochs.pack(side=tk.LEFT, padx=5)
+entry_epochs.grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
 label_batch_size = ttk.Label(frame_training, text="Batch Size:")
-label_batch_size.pack(side=tk.LEFT, padx=5)
+label_batch_size.grid(row=0, column=2, sticky="w", padx=5, pady=5)
 
 entry_batch_size = ttk.Entry(frame_training, width=10)
 entry_batch_size.insert(0, "10")
-entry_batch_size.pack(side=tk.LEFT, padx=5)
+entry_batch_size.grid(row=0, column=3, sticky="w", padx=5, pady=5)
 
 button_train = ttk.Button(frame_training, text="Train Model", command=train_model_command)
-button_train.pack(side=tk.LEFT, padx=5)
+button_train.grid(row=0, column=4, sticky="e", padx=5, pady=5)
+ToolTip(button_train, text="Train the neural network model.\nHotkey: Ctrl+T")
 
 progress_bar = ttk.Progressbar(frame_training, orient=tk.HORIZONTAL, length=200, mode='determinate')
-progress_bar.pack(side=tk.LEFT, padx=5)
+progress_bar.grid(row=1, column=0, columnspan=5, sticky="ew", padx=5, pady=5)
 
 button_show_history = ttk.Button(frame_training, text="Show History", command=open_training_history, state='disabled')
-button_show_history.pack(side=tk.LEFT, padx=5)
+button_show_history.grid(row=2, column=0, columnspan=5, sticky="ew", padx=5, pady=5)
+ToolTip(button_show_history, text="Show the training history plot.\nHotkey: Ctrl+H")
 
 label_test_loss = ttk.Label(frame_training, text="Test Loss: N/A")
-label_test_loss.pack(side=tk.LEFT, padx=5)
+label_test_loss.grid(row=3, column=0, columnspan=5, sticky="w", padx=5, pady=5)
 
-# Prediction section
+# -------------------- Prediction Section --------------------
 frame_prediction = ttk.LabelFrame(inner_frame, text="Prediction", padding=10)
-frame_prediction.pack(fill=tk.X, padx=10, pady=10)
+frame_prediction.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
 
 label_x1 = ttk.Label(frame_prediction, text="X1:")
-label_x1.pack(side=tk.LEFT, padx=5)
+label_x1.grid(row=0, column=0, sticky="w", padx=5, pady=5)
 
 entry_x1 = ttk.Entry(frame_prediction, width=10)
-entry_x1.pack(side=tk.LEFT, padx=5)
+entry_x1.grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
 label_x2 = ttk.Label(frame_prediction, text="X2:")
-label_x2.pack(side=tk.LEFT, padx=5)
+label_x2.grid(row=0, column=2, sticky="w", padx=5, pady=5)
 
 entry_x2 = ttk.Entry(frame_prediction, width=10)
-entry_x2.pack(side=tk.LEFT, padx=5)
+entry_x2.grid(row=0, column=3, sticky="w", padx=5, pady=5)
 
 label_x3 = ttk.Label(frame_prediction, text="X3 (Number or 'all'):")
-label_x3.pack(side=tk.LEFT, padx=5)
+label_x3.grid(row=1, column=0, sticky="w", padx=5, pady=5)
 
 entry_x3 = ttk.Entry(frame_prediction, width=20)
-entry_x3.pack(side=tk.LEFT, padx=5)
+entry_x3.grid(row=1, column=1, columnspan=3, sticky="ew", padx=5, pady=5)
 
 button_predict = ttk.Button(frame_prediction, text="Predict", command=predict_data)
-button_predict.pack(side=tk.LEFT, padx=5)
+button_predict.grid(row=2, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
+ToolTip(button_predict, text="Predict data using the loaded model.\nHotkey: Ctrl+P")
 
 button_show = ttk.Button(frame_prediction, text="Show Answer", command=show_answer)
-button_show.pack(side=tk.LEFT, padx=5)
+button_show.grid(row=2, column=2, columnspan=2, sticky="ew", padx=5, pady=5)
+ToolTip(button_show, text="Show the ground truth answer from the loaded dataset.\nHotkey: Ctrl+S")
 
 label_prediction = ttk.Label(inner_frame, text="", wraplength=window_width - 50)
-label_prediction.pack(fill=tk.X, padx=10, pady=5)
+label_prediction.grid(row=3, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
 
-# Model Save/Load section
+# -------------------- Model Save/Load Section --------------------
 frame_model = ttk.LabelFrame(inner_frame, text="Model Save/Load", padding=10)
-frame_model.pack(fill=tk.X, padx=10, pady=10)
+frame_model.grid(row=4, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
 
 label_save_path = ttk.Label(frame_model, text="Save Model Path:")
-label_save_path.pack(side=tk.LEFT, padx=5)
+label_save_path.grid(row=0, column=0, sticky="w", padx=5, pady=5)
 
 entry_save_path = ttk.Entry(frame_model, width=40)
-entry_save_path.insert(0, "my_model.keras")
-entry_save_path.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
+entry_save_path.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+entry_save_path.insert(0, config['Paths'].get('save_path', 'my_model.keras')) # Load from config
 
 button_save_model = ttk.Button(frame_model, text="Save Model", command=save_model_command)
-button_save_model.pack(side=tk.LEFT, padx=5)
+button_save_model.grid(row=0, column=2, sticky="e", padx=5, pady=5)
+ToolTip(button_save_model, text="Save the current model to a file.\nHotkey: Ctrl+Shift+S")
 
 label_load_path = ttk.Label(frame_model, text="Load Model Path:")
-label_load_path.pack(side=tk.LEFT, padx=5)
+label_load_path.grid(row=1, column=0, sticky="w", padx=5, pady=5)
 
 entry_load_path = ttk.Entry(frame_model, width=40)
-entry_load_path.insert(0, "my_model.keras")
-entry_load_path.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
+entry_load_path.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+entry_load_path.insert(0, config['Paths'].get('load_path', 'my_model.keras')) # Load from config
 
 button_load_model = ttk.Button(frame_model, text="Load Model", command=load_model_command)
-button_load_model.pack(side=tk.LEFT, padx=5)
+button_load_model.grid(row=1, column=2, sticky="e", padx=5, pady=5)
+ToolTip(button_load_model, text="Load a model from a file.\nHotkey: Ctrl+O")
 
-# Buttons for graphs and fullscreen
-button_graphs = ttk.Button(inner_frame, text="Graphs", command=open_graphs)
+# -------------------- Buttons for graphs and fullscreen --------------------
+frame_buttons = ttk.Frame(inner_frame, padding=10)
+frame_buttons.grid(row=5, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+
+button_graphs = ttk.Button(frame_buttons, text="Graphs", command=open_graphs)
 button_graphs.pack(side=tk.LEFT, padx=5)
+ToolTip(button_graphs, text="Open graphs plotting predictions and answers.\nHotkey: Ctrl+G")
 
-button_fullscreen = ttk.Button(inner_frame, text="Fullscreen", command=toggle_fullscreen)
+button_fullscreen = ttk.Button(frame_buttons, text="Fullscreen", command=toggle_fullscreen)
 button_fullscreen.pack(side=tk.LEFT, padx=5)
+ToolTip(button_fullscreen, text="Toggle fullscreen mode.\nHotkey: F11")
+
+# Make the inner frame resize with the canvas
+inner_frame.bind("<Configure>", lambda event: canvas.configure(scrollregion=canvas.bbox("all")))
+
+# Initial resize to calculate scroll region after all widgets are created
+root.update()
+canvas.configure(scrollregion=canvas.bbox("all"))
+
+# --- Keyboard Shortcuts ---
+root.bind("<Control-l>", lambda event: load_data_command())
+root.bind("<Control-t>", lambda event: train_model_command())
+root.bind("<Control-h>", lambda event: open_training_history())
+root.bind("<Control-p>", lambda event: predict_data())
+root.bind("<Control-s>", lambda event: show_answer())
+root.bind("<Control-Shift-S>", lambda event: save_model_command())
+root.bind("<Control-o>", lambda event: load_model_command())
+root.bind("<Control-g>", lambda event: open_graphs())
+root.bind("<F11>", lambda event: toggle_fullscreen())
 
 # Start the Tkinter main loop
 root.mainloop()
