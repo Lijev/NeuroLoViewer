@@ -12,6 +12,7 @@ import threading
 import sys
 import configparser
 
+
 class PointCreator:
     def __init__(self, root):
         self.root = root
@@ -21,9 +22,6 @@ class PointCreator:
         self.CONFIG_FILE = "config_pointer.ini"
         self.config = configparser.ConfigParser()
         self.load_config()
-        
-        # Load translations
-        self.translations = self.load_default_translations()
         
         # Set icon
         try:
@@ -50,7 +48,7 @@ class PointCreator:
         self.seasons_list = self.load_seasons()
         
         # Data storage variables
-        self.season_var = tk.StringVar(value=self.seasons_list[0] if self.seasons_list else self.translations.get("NEW_GENERATION", "New Generation"))
+        self.season_var = tk.StringVar(value=self.seasons_list[0] if self.seasons_list else "New Generation")
         self.episode_var = tk.StringVar(value="1")
         self.moment_var = tk.DoubleVar(value=50)
         
@@ -78,7 +76,7 @@ class PointCreator:
         # Variable for loaded capsule
         self.loaded_capsule = None
         
-        # Initialize empty dataset (instead of default loading)
+        # Initialize empty dataset
         self.data = {"X": [], "Y": []}
         
         self.create_widgets()
@@ -110,83 +108,12 @@ class PointCreator:
         with open(self.CONFIG_FILE, 'w') as configfile:
             self.config.write(configfile)
     
-    def load_default_translations(self):
-        """Load default English translations"""
-        return {
-            # Main titles
-            "MODEL": "MODEL",
-            "DESCRIPTION": "DESCRIPTION",
-            "DATASET": "DATASET",
-            "LANGUAGE_SELECT": "LANGUAGE SELECT",
-            
-            # Buttons
-            "SAVE": "Save",
-            "LOAD": "Load", 
-            "TRAIN_BUTTON": "TRAIN",
-            "PREDICT_POINT": "Predict Point", 
-            "PREDICT_EPISODE": "Predict Episode",
-            "CREATE_CAPS": "CREATE CAPSULE", 
-            "FULLSCREEN": "Fullscreen",
-            "LOAD_DATA": "Load Data", 
-            "APPLY": "Apply",
-            "LOAD_SEASON_NAMES": "Load Names",
-            
-            # Labels
-            "MODEL_INFO": "Model Info",
-            "MODEL_NAME": "Model Name:",
-            "SUCCESS_RATE": "Success Rate", 
-            "TRAINING": "Training",
-            "EPOCHS": "Epochs:", 
-            "BATCH_SIZE": "Batch Size:",
-            "SEASON": "Season:", 
-            "EPISODE": "Episode:",
-            "TIMECODE": "Timecode (HH:MM:SS):", 
-            "EPISODE_LENGTH": "Episode Length (HH:MM:SS):",
-            "TIMECODE_PERCENT": "Timecode (%):", 
-            "DATA_LOAD": "Data Loading",
-            "DATA_FILE": "Data File:", 
-            "CAPSULE": "Capsule Creation",
-            "SAVE_PATH": "Save Path:", 
-            "LOAD_PATH": "Load Path:",
-            
-            # New translations for Pointer
-            "TIMELINE": "Timeline",
-            "EMOTION": "Emotion",
-            "PLOT": "Plot",
-            "PREVIEW": "PREVIEW",
-            "PLAY": "PLAY",
-            "CREATE_MP4": "Create MP4",
-            "LOAD_CAPSULE": "Load Capsule",
-            "HOURS": "Hours:",
-            "MINUTES": "Minutes:",
-            "SECONDS": "Seconds:",
-            "SAVE_PATH_MP4": "Save Path:",
-            "BROWSE": "Browse",
-            "CREATE": "Create",
-            "CANCEL": "Cancel",
-            "NEW_GENERATION": "New Generation",
-            "TIME_FORMAT_HH_MM_SS": "HH:MM:SS",
-            "COORDINATES": "Coordinates",
-            "X": "X",
-            "Y": "Y",
-            "MP4_CREATION": "MP4 Creation",
-            "VIDEO_DURATION": "Video Duration:",
-            "SUCCESS": "Success",
-            "ERROR": "Error",
-            "WARNING": "Warning",
-            "INFO": "Information",
-            "CONTROLS": "Controls",
-            "ADD": "ADD",
-            "SHOW_FRAME": "Show frame",
-            "SHOW_EPISODE": "Show episode"
-        }
-    
     def setup_styles(self):
         """Setup modern styles"""
         self.style = ttk.Style()
         self.style.theme_use('clam')
         
-        # Color palette (like in LoView)
+        # Color palette
         BG_COLOR = "#2c3e50"
         FRAME_BG = "#34495e"
         BUTTON_BG = "#3498db"
@@ -212,6 +139,7 @@ class PointCreator:
         self.root.configure(bg=BG_COLOR)
     
     def load_seasons(self):
+        """Load seasons list from file or use default"""
         seasons_file = self.resource_path('seasons.txt')
         seasons = []
         try:
@@ -221,7 +149,7 @@ class PointCreator:
             else:
                 # Fallback seasons list
                 seasons = [
-                    self.translations.get("NEW_GENERATION", "New Generation"),
+                    "New Generation",
                     "Game of God",
                     "Perfect World",
                     "Voice of Time",
@@ -233,12 +161,12 @@ class PointCreator:
                 ]
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load seasons list: {str(e)}")
-            seasons = [self.translations.get("NEW_GENERATION", "New Generation")]
+            seasons = ["New Generation"]
         
         return seasons
     
     def load_background_images(self):
-        # Load background images
+        """Load background images for the point canvases"""
         try:
             # Left image - EmoPlain.png
             emo_image = Image.open(self.resource_path("EmoPlain.png"))
@@ -261,6 +189,7 @@ class PointCreator:
             messagebox.showerror("Error", f"Failed to load background images: {str(e)}")
     
     def create_widgets(self):
+        """Create all GUI widgets"""
         # Main paned window for horizontal layout
         main_paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
         main_paned.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -278,25 +207,24 @@ class PointCreator:
         main_paned.add(right_frame, weight=25)
         
         # ==================== LEFT FRAME - TIMELINE ====================
-        timeline_title = ttk.Label(left_frame, text=self.translations.get("TIMELINE", "Timeline"), 
-                                 font=('Arial', 12, 'bold'))
+        timeline_title = ttk.Label(left_frame, text="TIMELINE", font=('Arial', 12, 'bold'))
         timeline_title.pack(pady=10)
         
-        timeline_frame = ttk.LabelFrame(left_frame, text=self.translations.get("TIMELINE", "Timeline"), padding=10)
+        timeline_frame = ttk.LabelFrame(left_frame, text="Timeline", padding=10)
         timeline_frame.pack(fill="both", expand=True, padx=5, pady=5)
         
         # Season selection
-        ttk.Label(timeline_frame, text=self.translations.get("SEASON", "Season:")).pack(anchor="w", padx=5, pady=5)
+        ttk.Label(timeline_frame, text="Season:").pack(anchor="w", padx=5, pady=5)
         season_combo = ttk.Combobox(timeline_frame, textvariable=self.season_var, 
                                    values=self.seasons_list, state="readonly")
         season_combo.pack(fill="x", padx=5, pady=5)
         
         # Episode selection
-        ttk.Label(timeline_frame, text=self.translations.get("EPISODE", "Episode:")).pack(anchor="w", padx=5, pady=5)
+        ttk.Label(timeline_frame, text="Episode:").pack(anchor="w", padx=5, pady=5)
         ttk.Entry(timeline_frame, textvariable=self.episode_var).pack(fill="x", padx=5, pady=5)
         
         # Timecode input
-        ttk.Label(timeline_frame, text=self.translations.get("TIMECODE", "Timecode (HH:MM:SS):")).pack(anchor="w", padx=5, pady=5)
+        ttk.Label(timeline_frame, text="Timecode (HH:MM:SS):").pack(anchor="w", padx=5, pady=5)
         
         timecode_frame = ttk.Frame(timeline_frame)
         timecode_frame.pack(fill="x", padx=5, pady=5)
@@ -308,7 +236,7 @@ class PointCreator:
         ttk.Entry(timecode_frame, textvariable=self.seconds_var, width=3).pack(side="left")
         
         # Episode length input
-        ttk.Label(timeline_frame, text=self.translations.get("EPISODE_LENGTH", "Episode Length (HH:MM:SS):")).pack(anchor="w", padx=5, pady=5)
+        ttk.Label(timeline_frame, text="Episode Length (HH:MM:SS):").pack(anchor="w", padx=5, pady=5)
         
         length_frame = ttk.Frame(timeline_frame)
         length_frame.pack(fill="x", padx=5, pady=5)
@@ -320,7 +248,7 @@ class PointCreator:
         ttk.Entry(length_frame, textvariable=self.length_seconds_var, width=3).pack(side="left")
         
         # Moment percentage
-        ttk.Label(timeline_frame, text=self.translations.get("TIMECODE_PERCENT", "Timecode (%):")).pack(anchor="w", padx=5, pady=5)
+        ttk.Label(timeline_frame, text="Timecode (%):").pack(anchor="w", padx=5, pady=5)
         self.moment_scale = ttk.Scale(timeline_frame, from_=0, to=100, variable=self.moment_var, 
                                      orient="horizontal")
         self.moment_scale.pack(fill="x", padx=5, pady=5)
@@ -338,15 +266,14 @@ class PointCreator:
             var.trace_add('write', lambda *args: self.update_length_from_entries())
         
         # ==================== CENTER FRAME - POINTS ====================
-        points_title = ttk.Label(center_frame, text=self.translations.get("DESCRIPTION", "DESCRIPTION"), 
-                               font=('Arial', 12, 'bold'))
+        points_title = ttk.Label(center_frame, text="DESCRIPTION", font=('Arial', 12, 'bold'))
         points_title.pack(pady=10)
         
         points_frame = ttk.Frame(center_frame)
         points_frame.pack(fill="both", expand=True, pady=5)
         
         # Point 1 (Emotion)
-        point1_frame = ttk.LabelFrame(points_frame, text=self.translations.get("EMOTION", "Emotion"), padding=10)
+        point1_frame = ttk.LabelFrame(points_frame, text="Emotion", padding=10)
         point1_frame.pack(side="left", fill="both", expand=True, padx=10)
         
         self.canvas1 = tk.Canvas(point1_frame, width=300, height=300, bg="white", highlightthickness=1, highlightbackground="#34495e")
@@ -357,16 +284,16 @@ class PointCreator:
         coord1_frame = ttk.Frame(point1_frame)
         coord1_frame.pack(pady=5)
         
-        ttk.Label(coord1_frame, text=f"{self.translations.get('X', 'X')}:").pack(side="left")
+        ttk.Label(coord1_frame, text="X:").pack(side="left")
         self.x1_var = tk.StringVar(value="0.500")
         ttk.Label(coord1_frame, textvariable=self.x1_var, width=6).pack(side="left", padx=(0, 10))
         
-        ttk.Label(coord1_frame, text=f"{self.translations.get('Y', 'Y')}:").pack(side="left")
+        ttk.Label(coord1_frame, text="Y:").pack(side="left")
         self.y1_var = tk.StringVar(value="0.500")
         ttk.Label(coord1_frame, textvariable=self.y1_var, width=6).pack(side="left")
         
         # Point 2 (Plot)
-        point2_frame = ttk.LabelFrame(points_frame, text=self.translations.get("PLOT", "Plot"), padding=10)
+        point2_frame = ttk.LabelFrame(points_frame, text="Plot", padding=10)
         point2_frame.pack(side="right", fill="both", expand=True, padx=10)
         
         self.canvas2 = tk.Canvas(point2_frame, width=300, height=300, bg="white", highlightthickness=1, highlightbackground="#34495e")
@@ -377,17 +304,16 @@ class PointCreator:
         coord2_frame = ttk.Frame(point2_frame)
         coord2_frame.pack(pady=5)
         
-        ttk.Label(coord2_frame, text=f"{self.translations.get('X', 'X')}:").pack(side="left")
+        ttk.Label(coord2_frame, text="X:").pack(side="left")
         self.x2_var = tk.StringVar(value="0.500")
         ttk.Label(coord2_frame, textvariable=self.x2_var, width=6).pack(side="left", padx=(0, 10))
         
-        ttk.Label(coord2_frame, text=f"{self.translations.get('Y', 'Y')}:").pack(side="left")
+        ttk.Label(coord2_frame, text="Y:").pack(side="left")
         self.y2_var = tk.StringVar(value="0.500")
         ttk.Label(coord2_frame, textvariable=self.y2_var, width=6).pack(side="left")
         
         # ADD button under squares
-        add_button = ttk.Button(center_frame, text=self.translations.get("ADD", "ADD"), 
-                               command=self.add_current_data, width=15)
+        add_button = ttk.Button(center_frame, text="ADD", command=self.add_current_data, width=15)
         add_button.pack(pady=10)
         
         # Bind point movement events
@@ -395,32 +321,23 @@ class PointCreator:
         self.canvas2.bind("<B1-Motion>", lambda e: self.move_point(e, 2))
         
         # ==================== RIGHT FRAME - CONTROLS ====================
-        controls_title = ttk.Label(right_frame, text=self.translations.get("CONTROLS", "Controls"), 
-                                 font=('Arial', 12, 'bold'))
+        controls_title = ttk.Label(right_frame, text="Controls", font=('Arial', 12, 'bold'))
         controls_title.pack(pady=10)
         
-        controls_frame = ttk.LabelFrame(right_frame, text=self.translations.get("CONTROLS", "Controls"), padding=10)
+        controls_frame = ttk.LabelFrame(right_frame, text="Controls", padding=10)
         controls_frame.pack(fill="both", expand=True, padx=5, pady=5)
         
-        # New buttons for dataset operations
-        ttk.Button(controls_frame, text="Load data", 
-                  command=self.load_dataset, width=15).pack(pady=5, fill="x")
-        ttk.Button(controls_frame, text="Save data", 
-                  command=self.save_dataset_as, width=15).pack(pady=5, fill="x")
+        # Dataset operation buttons
+        ttk.Button(controls_frame, text="Load data", command=self.load_dataset, width=15).pack(pady=5, fill="x")
+        ttk.Button(controls_frame, text="Save data", command=self.save_dataset_as, width=15).pack(pady=5, fill="x")
         
-        # Убрал кнопку "Show frame"
-        ttk.Button(controls_frame, text=self.translations.get("SHOW_EPISODE", "Show episode"), 
-                  command=self.show_episode, width=15).pack(pady=5, fill="x")
-        ttk.Button(controls_frame, text=self.translations.get("CREATE_MP4", "Create MP4"), 
-                  command=self.open_mp4_dialog, width=15).pack(pady=5, fill="x")
-        ttk.Button(controls_frame, text=self.translations.get("LOAD_CAPSULE", "Load Capsule"), 
-                  command=self.load_capsule_dialog, width=15).pack(pady=5, fill="x")
+        # Playback and export buttons
+        ttk.Button(controls_frame, text="Show episode", command=self.show_episode, width=15).pack(pady=5, fill="x")
+        ttk.Button(controls_frame, text="Create MP4", command=self.open_mp4_dialog, width=15).pack(pady=5, fill="x")
+        ttk.Button(controls_frame, text="Load Capsule", command=self.load_capsule_dialog, width=15).pack(pady=5, fill="x")
         
         # Utility buttons
-        ttk.Button(controls_frame, text=self.translations.get("LANGUAGE_SELECT", "LANGUAGE SELECT"), 
-                  command=self.load_translations, width=15).pack(pady=5, fill="x")
-        ttk.Button(controls_frame, text=self.translations.get("FULLSCREEN", "Fullscreen"), 
-                  command=self.toggle_fullscreen, width=15).pack(pady=5, fill="x")
+        ttk.Button(controls_frame, text="Fullscreen", command=self.toggle_fullscreen, width=15).pack(pady=5, fill="x")
     
     def add_current_data(self):
         """Add current data to dataset"""
@@ -501,16 +418,16 @@ class PointCreator:
         except ValueError:
             pass
         
-        # Автоматическое обновление позиции точек при движении ползунка
+        # Automatically update point positions when slider moves
         self.update_points_from_scale()
 
     def update_points_from_scale(self):
         """Update point positions when scale moves"""
-        # Если воспроизведение активно, не обновляем точки вручную
+        # If playback is active, don't update points manually
         if self.is_playing:
             return
             
-        # Получаем данные для выбранного эпизода
+        # Get data for selected episode
         if self.loaded_capsule:
             season_index = self.seasons_list.index(self.season_var.get()) + 1
             if (self.loaded_capsule["season"] == season_index and 
@@ -520,24 +437,24 @@ class PointCreator:
                     "quartets": self.loaded_capsule["quartets"]
                 }
             else:
-                # Капсула не соответствует выбранному эпизоду
+                # Capsule doesn't match selected episode
                 return
         else:
-            # Используем данные из IDS.json (старый формат)
+            # Use data from IDS.json (old format)
             self.episode_data = self.get_episode_data()
         
         if not self.episode_data["moments"]:
             return
         
-        # Получаем целевую позицию для текущего момента
+        # Get target position for current moment
         current_time = self.moment_var.get()
         target_points = self.get_interpolated_target(current_time)
         
         if target_points:
-            # Устанавливаем точки в целевую позицию
+            # Set points to target position
             self.set_point_position(1, target_points[0], target_points[1])
             self.set_point_position(2, target_points[2], target_points[3])
-            # Обновляем текущие точки
+            # Update current points
             self.current_points = target_points.copy()
     
     def update_timecode_from_entries(self):
@@ -564,17 +481,13 @@ class PointCreator:
         """Update scale when length entries change"""
         self.update_timecode_from_entries()
     
-    def load_translations(self):
-        """Load translations from file (placeholder)"""
-        # This would be implemented similarly to LoView's load_translations
-        messagebox.showinfo("Info", "Translation loading would be implemented here")
-    
     def toggle_fullscreen(self):
         """Toggle fullscreen mode"""
         self.is_fullscreen = not self.is_fullscreen
         self.root.attributes("-fullscreen", self.is_fullscreen)
     
     def move_point(self, event, point_num):
+        """Move point on canvas when dragged"""
         canvas = self.canvas1 if point_num == 1 else self.canvas2
         point = self.point1 if point_num == 1 else self.point2
         
@@ -627,46 +540,6 @@ class PointCreator:
             quartets = list(quartets)
         
         return {"moments": moments, "quartets": quartets}
-    
-    def show_frame(self):
-        """Show current frame without animation"""
-        # Stop any ongoing playback
-        if self.is_playing:
-            self.is_playing = False
-            self.moment_scale.config(state="normal")
-            self.moment_label.config(foreground="#ecf0f1")
-        
-        # Get data for selected episode
-        if self.loaded_capsule:
-            # Use data from loaded capsule
-            season_index = self.seasons_list.index(self.season_var.get()) + 1
-            if (self.loaded_capsule["season"] == season_index and 
-                self.loaded_capsule["episode"] == int(self.episode_var.get())):
-                self.episode_data = {
-                    "moments": self.loaded_capsule["moments"],
-                    "quartets": self.loaded_capsule["quartets"]
-                }
-            else:
-                messagebox.showwarning("Warning", "Loaded capsule doesn't match selected season/episode!")
-                return
-        else:
-            # Use data from IDS.json (old format)
-            self.episode_data = self.get_episode_data()
-        
-        if not self.episode_data["moments"]:
-            messagebox.showwarning("Warning", "No data for selected episode!")
-            return
-        
-        # Get target position for current moment
-        current_time = self.moment_var.get()
-        target_points = self.get_interpolated_target(current_time)
-        
-        if target_points:
-            # Set points to target position directly
-            self.set_point_position(1, target_points[0], target_points[1])
-            self.set_point_position(2, target_points[2], target_points[3])
-            # Update current points
-            self.current_points = target_points.copy()
     
     def show_episode(self):
         """Show full episode with animation"""
@@ -741,6 +614,7 @@ class PointCreator:
         return interpolated_points
     
     def play_animation(self):
+        """Play animation of episode"""
         if not self.is_playing:
             return
             
@@ -807,6 +681,7 @@ class PointCreator:
         self.set_point_position(2, self.current_points[2], self.current_points[3])
     
     def set_point_position(self, point_num, x_norm, y_norm):
+        """Set point position from normalized coordinates"""
         canvas = self.canvas1 if point_num == 1 else self.canvas2
         point = self.point1 if point_num == 1 else self.point2
         
@@ -868,7 +743,7 @@ class PointCreator:
     def open_mp4_dialog(self):
         """Open dialog for MP4 creation"""
         mp4_dialog = tk.Toplevel(self.root)
-        mp4_dialog.title(self.translations.get("MP4_CREATION", "Create MP4 Video"))
+        mp4_dialog.title("Create MP4 Video")
         mp4_dialog.geometry("400x300")
         mp4_dialog.resizable(False, False)
         mp4_dialog.configure(bg='#2c3e50')
@@ -881,21 +756,21 @@ class PointCreator:
         except:
             pass
         
-        ttk.Label(mp4_dialog, text=self.translations.get("VIDEO_DURATION", "Video Duration:"), font=("Arial", 12)).pack(pady=10)
+        ttk.Label(mp4_dialog, text="Video Duration:", font=("Arial", 12)).pack(pady=10)
         
         # Time input fields
         time_frame = ttk.Frame(mp4_dialog)
         time_frame.pack(pady=10)
         
-        ttk.Label(time_frame, text=self.translations.get("HOURS", "Hours:")).grid(row=0, column=0, padx=5)
+        ttk.Label(time_frame, text="Hours:").grid(row=0, column=0, padx=5)
         hours_entry = ttk.Entry(time_frame, textvariable=self.video_hours_var, width=5)
         hours_entry.grid(row=0, column=1, padx=5)
         
-        ttk.Label(time_frame, text=self.translations.get("MINUTES", "Minutes:")).grid(row=0, column=2, padx=5)
+        ttk.Label(time_frame, text="Minutes:").grid(row=0, column=2, padx=5)
         minutes_entry = ttk.Entry(time_frame, textvariable=self.video_minutes_var, width=5)
         minutes_entry.grid(row=0, column=3, padx=5)
         
-        ttk.Label(time_frame, text=self.translations.get("SECONDS", "Seconds:")).grid(row=0, column=4, padx=5)
+        ttk.Label(time_frame, text="Seconds:").grid(row=0, column=4, padx=5)
         seconds_entry = ttk.Entry(time_frame, textvariable=self.video_seconds_var, width=5)
         seconds_entry.grid(row=0, column=5, padx=5)
         
@@ -903,21 +778,21 @@ class PointCreator:
         path_frame = ttk.Frame(mp4_dialog)
         path_frame.pack(pady=10, fill="x", padx=20)
         
-        ttk.Label(path_frame, text=self.translations.get("SAVE_PATH_MP4", "Save Path:")).pack(anchor="w")
+        ttk.Label(path_frame, text="Save Path:").pack(anchor="w")
         
         path_entry_frame = ttk.Frame(path_frame)
         path_entry_frame.pack(fill="x", pady=5)
         
         ttk.Entry(path_entry_frame, textvariable=self.video_path_var, width=30).pack(side="left", fill="x", expand=True, padx=(0, 5))
-        ttk.Button(path_entry_frame, text=self.translations.get("BROWSE", "Browse"), command=self.browse_save_path, width=8).pack(side="right")
+        ttk.Button(path_entry_frame, text="Browse", command=self.browse_save_path, width=8).pack(side="right")
         
         # Buttons
         btn_frame = ttk.Frame(mp4_dialog)
         btn_frame.pack(pady=20)
         
-        ttk.Button(btn_frame, text=self.translations.get("CREATE", "Create"), 
+        ttk.Button(btn_frame, text="Create", 
                   command=lambda: self.start_mp4_creation(mp4_dialog)).pack(side="left", padx=10)
-        ttk.Button(btn_frame, text=self.translations.get("CANCEL", "Cancel"), command=mp4_dialog.destroy).pack(side="right", padx=10)
+        ttk.Button(btn_frame, text="Cancel", command=mp4_dialog.destroy).pack(side="right", padx=10)
         
     def browse_save_path(self):
         """Select path for saving video"""
@@ -1085,6 +960,7 @@ class PointCreator:
         # Convert BGR to RGB for moviepy
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         return frame_rgb
+
 
 if __name__ == "__main__":
     root = tk.Tk()
