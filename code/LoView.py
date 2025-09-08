@@ -38,23 +38,10 @@ config.read(CONFIG_FILE)
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
-        # For development, use the data folder relative to the script
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        base_path = os.path.join(script_dir, "..", "data")
-    
-    full_path = os.path.join(base_path, relative_path)
-    
-    # Fallback: if file doesn't exist in PyInstaller temp, try relative to executable
-    if not os.path.exists(full_path) and hasattr(sys, '_MEIPASS'):
-        exe_dir = os.path.dirname(sys.executable)
-        fallback_path = os.path.join(exe_dir, "data", relative_path)
-        if os.path.exists(fallback_path):
-            return fallback_path
-    
-    return full_path
+        base_path = os.path.abspath("../data/")
+    return os.path.join(base_path, relative_path)
 
 def load_data(filepath):
     """Load dataset from JSON file"""
@@ -110,10 +97,9 @@ def save_model(model, model_name):
         # Save to config
         config['Paths']['save_path'] = model_name
         save_config()
-        return True
+
     except Exception as e:
         messagebox.showerror("Error", f"Error saving model: {e}")
-        return False
 
 def load_model(model_name):
     """Load a Keras model from file"""
@@ -727,13 +713,10 @@ x_pos = (screen_width - window_width) // 2
 y_pos = (screen_height - window_height) // 2
 root.geometry(f"{window_width}x{window_height}+{x_pos}+{y_pos}")
 
-# Set window icon with error handling
-try:
-    icon_path = resource_path("lo.ico")
-    if os.path.exists(icon_path):
-        root.iconbitmap(icon_path)
-except Exception as e:
-    print(f"Error loading icon: {e}")
+# Set window icon
+icon_path = resource_path("lo.ico")
+if os.path.exists(icon_path):
+    root.iconbitmap(icon_path)
 
 root.configure(background=BG_COLOR)
 
@@ -900,22 +883,14 @@ scale_timestamp.configure(command=update_time_display)
 frame_canvases = ttk.Frame(center_frame)
 frame_canvases.pack(pady=10, fill=tk.BOTH, expand=True, padx=10)
 
-# Load background images with error handling
-emo_bg = None
-plot_bg = None
-try:
-    emo_image = Image.open(resource_path("EmoPlain.png"))
-    emo_image = emo_image.resize((300, 300), Image.Resampling.LANCZOS)
-    emo_bg = ImageTk.PhotoImage(emo_image)
-except Exception as e:
-    print(f"Error loading EmoPlain.png: {e}")
+# Load background images
+emo_image = Image.open(resource_path("EmoPlain.png"))
+emo_image = emo_image.resize((300, 300), Image.Resampling.LANCZOS)
+emo_bg = ImageTk.PhotoImage(emo_image)
 
-try:
-    plot_image = Image.open(resource_path("PlotPlain.png"))
-    plot_image = plot_image.resize((300, 300), Image.Resampling.LANCZOS)
-    plot_bg = ImageTk.PhotoImage(plot_image)
-except Exception as e:
-    print(f"Error loading PlotPlain.png: {e}")
+plot_image = Image.open(resource_path("PlotPlain.png"))
+plot_image = plot_image.resize((300, 300), Image.Resampling.LANCZOS)
+plot_bg = ImageTk.PhotoImage(plot_image)
 
 # Create frames for each canvas with coordinates
 frame_emo = ttk.Frame(frame_canvases)
@@ -923,8 +898,7 @@ frame_emo.pack(side=tk.LEFT, padx=10)
 
 canvas_emo = tk.Canvas(frame_emo, width=300, height=300, bg="white")
 canvas_emo.pack()
-if emo_bg:
-    canvas_emo.create_image(0, 0, anchor="nw", image=emo_bg)
+canvas_emo.create_image(0, 0, anchor="nw", image=emo_bg)
 point_emo = canvas_emo.create_oval(145, 145, 155, 155, fill="red", outline="red")
 
 # Coordinate labels for emotion point
@@ -944,8 +918,7 @@ frame_plot.pack(side=tk.RIGHT, padx=10)
 
 canvas_plot = tk.Canvas(frame_plot, width=300, height=300, bg="white")
 canvas_plot.pack()
-if plot_bg:
-    canvas_plot.create_image(0, 0, anchor="nw", image=plot_bg)
+canvas_plot.create_image(0, 0, anchor="nw", image=plot_bg)
 point_plot = canvas_plot.create_oval(145, 145, 155, 155, fill="blue", outline="blue")
 
 # Coordinate labels for plot point

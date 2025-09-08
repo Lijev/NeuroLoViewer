@@ -89,23 +89,10 @@ class PointCreator:
     def resource_path(self, relative_path):
         """Get absolute path to resource, works for dev and for PyInstaller"""
         try:
-            # PyInstaller creates a temp folder and stores path in _MEIPASS
             base_path = sys._MEIPASS
         except Exception:
-            # For development, use the data folder relative to the script
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            base_path = os.path.join(script_dir, "..", "data")
-        
-        full_path = os.path.join(base_path, relative_path)
-        
-        # Fallback: if file doesn't exist in PyInstaller temp, try relative to executable
-        if not os.path.exists(full_path) and hasattr(sys, '_MEIPASS'):
-            exe_dir = os.path.dirname(sys.executable)
-            fallback_path = os.path.join(exe_dir, "data", relative_path)
-            if os.path.exists(fallback_path):
-                return fallback_path
-        
-        return full_path
+            base_path = os.path.abspath("../data/")
+        return os.path.join(base_path, relative_path)
     
     def load_config(self):
         """Load configuration from file"""
@@ -894,7 +881,7 @@ class PointCreator:
             
             ttk.Label(progress_window, text="Creating video...").pack(pady=5)
             progress_var = tk.DoubleVar()
-            progress_bar = tttk.Progressbar(progress_window, variable=progress_var, maximum=total_frames, style="Horizontal.TProgressbar")
+            progress_bar = ttk.Progressbar(progress_window, variable=progress_var, maximum=total_frames, style="Horizontal.TProgressbar")
             progress_bar.pack(pady=10, padx=20, fill="x")
             
             # Start from center positions
