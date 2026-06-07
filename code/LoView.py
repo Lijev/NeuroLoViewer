@@ -4,7 +4,7 @@ from sklearn.model_selection import train_test_split
 from tensorflow import keras
 from tensorflow.keras import layers
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog, simpledialog
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import os
@@ -30,10 +30,365 @@ episode_prediction_thread = None
 season_names = []
 updating_time = False  # Flag to prevent recursive updates
 
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
 # Configuration file setup
 CONFIG_FILE = "config.ini"
 config = configparser.ConfigParser()
 config.read(CONFIG_FILE)
+
+
+class Anchor:
+    """Класс для хранения данных якоря"""
+    def __init__(self, name, coordinates):
+        self.name = name
+        self.coordinates = coordinates.copy()  # [x1, y1, x2, y2]
+        self.created_at = time.time()
+    
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "coordinates": self.coordinates,
+            "created_at": self.created_at
+        }
+    
+    @classmethod
+    def from_dict(cls, data):
+        anchor = cls(data["name"], data["coordinates"])
+        anchor.created_at = data.get("created_at", time.time())
+        return anchor
+
+
+class AnchorMenu:
+    """Окно управления якорями"""
+    def __init__(self, parent, anchors_list, save_callback, update_display_callback):
+        self.parent = parent
+        self.anchors_list = anchors_list
+        self.save_callback = save_callback
+        self.update_display_callback = update_display_callback
+        self.window = tk.Toplevel(parent)
+        self.window.title("Anchor Manager")
+        self.window.geometry("650x550")
+        self.window.configure(bg='#2c3e50')
+        
+        # Set icon
+        try:
+            icon_path = resource_path("lo.ico")
+            if os.path.exists(icon_path):
+                self.window.iconbitmap(icon_path)
+        except:
+            pass
+        
+        # Make window not auto-closing
+        self.window.transient(parent)
+        self.window.protocol("WM_DELETE_WINDOW", self.on_close)
+        
+        self.create_widgets()
+        self.refresh_anchor_list()
+    
+    def on_close(self):
+        """Handle window close"""
+        self.window.destroy()
+    
+    def get_anchors(self):
+        return self.anchors_list
+    
+    def save_anchors(self):
+        if self.save_callback:
+            self.save_callback(self.anchors_list)
+    
+    def create_widgets(self):
+        # Title
+        title_label = ttk.Label(self.window, text="ANCHOR MANAGER", font=('Arial', 14, 'bold'))
+        title_label.pack(pady=10)
+        
+        # Import/Export buttons frame
+        io_frame = ttk.Frame(self.window)
+        io_frame.pack(pady=5)
+        
+        ttk.Button(io_frame, text="↓ AnchorBook", command=self.import_anchors, width=18).pack(side="left", padx=5)
+        ttk.Button(io_frame, text="↑ AnchorBook", command=self.export_anchors, width=18).pack(side="left", padx=5)
+        
+        # List frame
+        list_frame = ttk.LabelFrame(self.window, text="Anchors", padding=10)
+        list_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        # Create Treeview for anchors
+        columns = ("Name", "X1", "Y1", "X2", "Y2")
+        self.tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=12)
+        
+        # Define headings
+        self.tree.heading("Name", text="Anchor Name")
+        self.tree.heading("X1", text="Emotion X")
+        self.tree.heading("Y1", text="Emotion Y")
+        self.tree.heading("X2", text="Plot X")
+        self.tree.heading("Y2", text="Plot Y")
+        
+        # Set column widths
+        self.tree.column("Name", width=150)
+        self.tree.column("X1", width=80)
+        self.tree.column("Y1", width=80)
+        self.tree.column("X2", width=80)
+        self.tree.column("Y2", width=80)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Bind selection event
+        self.tree.bind('<<TreeviewSelect>>', self.on_anchor_selected)
+        
+        # Buttons frame
+        buttons_frame = ttk.Frame(self.window)
+        buttons_frame.pack(pady=15)
+        
+        btn_style = {"width": 12, "padding": 5}
+        
+        ttk.Button(buttons_frame, text="Clone", command=self.clone_anchor, **btn_style).grid(row=0, column=0, padx=5, pady=5)
+        ttk.Button(buttons_frame, text="Rename", command=self.rename_anchor, **btn_style).grid(row=0, column=1, padx=5, pady=5)
+        ttk.Button(buttons_frame, text="Delete", command=self.delete_anchor, **btn_style).grid(row=0, column=2, padx=5, pady=5)
+        ttk.Button(buttons_frame, text="Move", command=self.move_anchor, **btn_style).grid(row=1, column=0, padx=5, pady=5)
+        ttk.Button(buttons_frame, text="Use", command=self.use_anchor, **btn_style).grid(row=1, column=1, padx=5, pady=5)
+        ttk.Button(buttons_frame, text="Close", command=self.on_close, **btn_style).grid(row=1, column=2, padx=5, pady=5)
+        
+        self.selected_anchor = None
+    
+    def refresh_anchor_list(self):
+        """Обновить список якорей"""
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        
+        for anchor in self.get_anchors():
+            coords = anchor.coordinates
+            self.tree.insert("", "end", values=(
+                anchor.name,
+                f"{coords[0]:.3f}",
+                f"{coords[1]:.3f}",
+                f"{coords[2]:.3f}",
+                f"{coords[3]:.3f}"
+            ), tags=(anchor.name,))
+    
+    def on_anchor_selected(self, event):
+        """Обработка выбора якоря"""
+        selection = self.tree.selection()
+        if selection:
+            item = self.tree.item(selection[0])
+            anchor_name = item['values'][0]
+            for anchor in self.get_anchors():
+                if anchor.name == anchor_name:
+                    self.selected_anchor = anchor
+                    break
+    
+    def import_anchors(self):
+        """Import anchors from AnchorBook file"""
+        filepath = filedialog.askopenfilename(
+            title="Import AnchorBook",
+            filetypes=[("AnchorBook files", "*.json"), ("All files", "*.*")],
+            parent=self.window
+        )
+        
+        if filepath:
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    anchorbook_data = json.load(f)
+                
+                if "anchors" in anchorbook_data and isinstance(anchorbook_data["anchors"], list):
+                    imported_count = 0
+                    for anchor_data in anchorbook_data["anchors"]:
+                        existing = [a for a in self.get_anchors() if a.name == anchor_data["name"]]
+                        if existing:
+                            if messagebox.askyesno("Overwrite", 
+                                f"Anchor '{anchor_data['name']}' already exists. Overwrite?",
+                                parent=self.window):
+                                self.get_anchors().remove(existing[0])
+                                new_anchor = Anchor.from_dict(anchor_data)
+                                self.get_anchors().append(new_anchor)
+                                imported_count += 1
+                        else:
+                            new_anchor = Anchor.from_dict(anchor_data)
+                            self.get_anchors().append(new_anchor)
+                            imported_count += 1
+                    
+                    self.save_anchors()
+                    self.refresh_anchor_list()
+                    if self.update_display_callback:
+                        self.update_display_callback()
+                    messagebox.showinfo("Success", f"Imported {imported_count} anchors from AnchorBook!", parent=self.window)
+                else:
+                    messagebox.showerror("Error", "Invalid AnchorBook format!", parent=self.window)
+                    
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to import AnchorBook: {str(e)}", parent=self.window)
+    
+    def export_anchors(self):
+        """Export anchors to AnchorBook file"""
+        if not self.get_anchors():
+            messagebox.showwarning("Warning", "No anchors to export!", parent=self.window)
+            return
+        
+        filepath = filedialog.asksaveasfilename(
+            title="Export AnchorBook",
+            defaultextension=".json",
+            filetypes=[("AnchorBook files", "*.json"), ("All files", "*.*")],
+            parent=self.window
+        )
+        
+        if filepath:
+            try:
+                anchorbook_data = {
+                    "version": "1.0",
+                    "created": time.time(),
+                    "anchor_count": len(self.get_anchors()),
+                    "anchors": [anchor.to_dict() for anchor in self.get_anchors()]
+                }
+                
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(anchorbook_data, f, indent=4, ensure_ascii=False)
+                
+                messagebox.showinfo("Success", f"Exported {len(self.get_anchors())} anchors to AnchorBook!", parent=self.window)
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to export AnchorBook: {str(e)}", parent=self.window)
+    
+    def clone_anchor(self):
+        """Клонировать выбранный якорь"""
+        if not self.selected_anchor:
+            messagebox.showwarning("Warning", "Please select an anchor first!", parent=self.window)
+            return
+        
+        new_name = simpledialog.askstring("Clone Anchor", f"Enter name for cloned anchor:", parent=self.window)
+        if new_name:
+            if any(anchor.name == new_name for anchor in self.get_anchors()):
+                messagebox.showerror("Error", f"Anchor with name '{new_name}' already exists!", parent=self.window)
+                return
+            
+            new_anchor = Anchor(new_name, self.selected_anchor.coordinates)
+            self.get_anchors().append(new_anchor)
+            self.save_anchors()
+            self.refresh_anchor_list()
+            if self.update_display_callback:
+                self.update_display_callback()
+            messagebox.showinfo("Success", f"Anchor '{new_name}' cloned successfully!", parent=self.window)
+    
+    def rename_anchor(self):
+        """Переименовать выбранный якорь"""
+        if not self.selected_anchor:
+            messagebox.showwarning("Warning", "Please select an anchor first!", parent=self.window)
+            return
+        
+        new_name = simpledialog.askstring("Rename Anchor", f"Enter new name for '{self.selected_anchor.name}':", parent=self.window)
+        if new_name:
+            if any(anchor.name == new_name for anchor in self.get_anchors()):
+                messagebox.showerror("Error", f"Anchor with name '{new_name}' already exists!", parent=self.window)
+                return
+            
+            old_name = self.selected_anchor.name
+            self.selected_anchor.name = new_name
+            self.save_anchors()
+            self.refresh_anchor_list()
+            if self.update_display_callback:
+                self.update_display_callback()
+            messagebox.showinfo("Success", f"Anchor renamed from '{old_name}' to '{new_name}'!", parent=self.window)
+    
+    def delete_anchor(self):
+        """Удалить выбранный якорь"""
+        if not self.selected_anchor:
+            messagebox.showwarning("Warning", "Please select an anchor first!", parent=self.window)
+            return
+        
+        if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete anchor '{self.selected_anchor.name}'?", parent=self.window):
+            self.get_anchors().remove(self.selected_anchor)
+            self.save_anchors()
+            self.selected_anchor = None
+            self.refresh_anchor_list()
+            if self.update_display_callback:
+                self.update_display_callback()
+            messagebox.showinfo("Success", "Anchor deleted successfully!", parent=self.window)
+    
+    def move_anchor(self):
+        """Изменить координаты якоря через ввод чисел"""
+        if not self.selected_anchor:
+            messagebox.showwarning("Warning", "Please select an anchor first!", parent=self.window)
+            return
+        
+        move_dialog = tk.Toplevel(self.window)
+        move_dialog.title("Move Anchor")
+        move_dialog.geometry("300x250")
+        move_dialog.configure(bg='#2c3e50')
+        move_dialog.transient(self.window)
+        move_dialog.grab_set()
+        
+        ttk.Label(move_dialog, text=f"Moving Anchor: {self.selected_anchor.name}", font=('Arial', 10, 'bold')).pack(pady=10)
+        
+        fields = [
+            ("Emotion X (0-1):", self.selected_anchor.coordinates[0]),
+            ("Emotion Y (0-1):", self.selected_anchor.coordinates[1]),
+            ("Plot X (0-1):", self.selected_anchor.coordinates[2]),
+            ("Plot Y (0-1):", self.selected_anchor.coordinates[3])
+        ]
+        
+        entries = []
+        for label_text, default_value in fields:
+            frame = ttk.Frame(move_dialog)
+            frame.pack(pady=5, padx=20, fill="x")
+            
+            ttk.Label(frame, text=label_text).pack(side="left")
+            entry = ttk.Entry(frame)
+            entry.insert(0, f"{default_value:.3f}")
+            entry.pack(side="right", expand=True, fill="x", padx=(10, 0))
+            entries.append(entry)
+        
+        def apply_move():
+            try:
+                new_coords = []
+                for entry in entries:
+                    value = float(entry.get())
+                    if 0 <= value <= 1:
+                        new_coords.append(value)
+                    else:
+                        messagebox.showerror("Error", "Coordinates must be between 0 and 1!", parent=move_dialog)
+                        return
+                
+                self.selected_anchor.coordinates = new_coords
+                self.save_anchors()
+                self.refresh_anchor_list()
+                if self.update_display_callback:
+                    self.update_display_callback()
+                move_dialog.destroy()
+                messagebox.showinfo("Success", "Anchor moved successfully!", parent=self.window)
+                
+            except ValueError:
+                messagebox.showerror("Error", "Please enter valid numbers!", parent=move_dialog)
+        
+        ttk.Button(move_dialog, text="Apply", command=apply_move).pack(pady=15)
+    
+    def use_anchor(self):
+        """Переместить текущие точки на координаты якоря"""
+        if not self.selected_anchor:
+            messagebox.showwarning("Warning", "Please select an anchor first!", parent=self.window)
+            return
+        
+        update_canvas_points(
+            self.selected_anchor.coordinates[0],
+            self.selected_anchor.coordinates[1],
+            self.selected_anchor.coordinates[2],
+            self.selected_anchor.coordinates[3]
+        )
+        
+        # Update current_points globally
+        current_points[0] = self.selected_anchor.coordinates[0]
+        current_points[1] = self.selected_anchor.coordinates[1]
+        current_points[2] = self.selected_anchor.coordinates[2]
+        current_points[3] = self.selected_anchor.coordinates[3]
+        
+        if self.update_display_callback:
+            self.update_display_callback()
+        
+        messagebox.showinfo("Success", f"Points moved to anchor '{self.selected_anchor.name}'!", parent=self.window)
+
 
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
@@ -42,6 +397,7 @@ def resource_path(relative_path):
     except Exception:
         base_path = os.path.abspath("../data/")
     return os.path.join(base_path, relative_path)
+
 
 def load_data(filepath):
     """Load dataset from JSON file"""
@@ -56,6 +412,7 @@ def load_data(filepath):
         messagebox.showerror("Error", f"Error loading data: {e}")
         return None, None
 
+
 def create_and_train_model(X_train, y_train, X_test, y_test, epochs=100, batch_size=10, progress_callback=None):
     """Create and train neural network model"""
     hidden_layer_size = 128
@@ -66,7 +423,6 @@ def create_and_train_model(X_train, y_train, X_test, y_test, epochs=100, batch_s
     model.add(layers.Dense(4))
     model.compile(optimizer='adam', loss='mean_squared_error')
     
-    # Train model
     history = model.fit(
         X_train,
         y_train,
@@ -79,13 +435,11 @@ def create_and_train_model(X_train, y_train, X_test, y_test, epochs=100, batch_s
         )]
     )
     
-    # Evaluate model
     test_loss = model.evaluate(X_test, y_test, verbose=0)
-    
-    # Calculate success rate
     success_rate = max(0, (1 - test_loss)) * 100
     
     return model, history, test_loss, success_rate
+
 
 def save_model(model, model_name):
     """Save a Keras model to a file"""
@@ -93,13 +447,13 @@ def save_model(model, model_name):
         model.save(model_name)
         messagebox.showinfo("Success", f"Model saved successfully: {model_name}")
         print(f'Model saved as {model_name}')
-
-        # Save to config
+        
         config['Paths']['save_path'] = model_name
         save_config()
-
+        
     except Exception as e:
         messagebox.showerror("Error", f"Error saving model: {e}")
+
 
 def load_model(model_name):
     """Load a Keras model from file"""
@@ -113,11 +467,13 @@ def load_model(model_name):
         messagebox.showerror("Error", f"Error loading model: {e}")
         return None
 
+
 def update_progress_bar(epoch, total_epochs):
     """Update training progress bar"""
     progress_value = int((epoch / total_epochs) * 100)
     progress_bar['value'] = progress_value
     root.update_idletasks()
+
 
 def train_model_thread(X_train, y_train, X_test, y_test, epochs, batch_size):
     """Thread function for model training"""
@@ -135,6 +491,7 @@ def train_model_thread(X_train, y_train, X_test, y_test, epochs, batch_size):
         progress_bar['value'] = 0
         button_train['state'] = 'normal'
 
+
 def train_model_command():
     """Command handler for training button"""
     global X_train, X_test, y_train, y_test
@@ -150,15 +507,12 @@ def train_model_command():
     button_train['state'] = 'disabled'
     threading.Thread(target=train_model_thread, args=(X_train, y_train, X_test, y_test, epochs, batch_size)).start()
 
+
 def load_data_command():
     """Command handler for loading data"""
     global X_train, X_test, y_train, y_test, data_X, data_Y
     filepath = filedialog.askopenfilename(title="Select Data File",
                                            filetypes=[("JSON files", "*.json"), ("All files", "*.*")])
-    if not filepath:
-        return
-    
-    # Use IDS.json as default if no file selected
     if not filepath:
         filepath = "IDS.json"
     
@@ -173,20 +527,18 @@ def load_data_command():
         config['Paths']['data_path'] = filepath
         save_config()
         
-        # Update seasons list
         update_seasons_list()
     else:
         X_train, X_test, y_train, y_test = None, None, None, None
         data_X, data_Y = None, None
 
+
 def update_seasons_list():
     """Update the seasons dropdown list"""
     global seasons_list
-    # Always use loaded season names if available
     if season_names:
         seasons_list = season_names
     elif data_X is not None:
-        # Extract unique seasons from data
         seasons = sorted(set(int(x[0] * 10) for x in data_X))
         seasons_list = [f"Season {s}" for s in seasons]
     else:
@@ -197,24 +549,23 @@ def update_seasons_list():
         combo_season.set(seasons_list[0])
         update_episodes_list()
 
+
 def update_episodes_list():
     """Update episodes list based on selected season"""
     if data_X is not None and combo_season.get():
         try:
-            # Get season number from name
             if season_names:
                 season_num = season_names.index(combo_season.get()) + 1
             else:
                 season_num = int(combo_season.get().split()[-1])
                 
-            # Extract episodes for selected season
             episodes = sorted(set(int(x[1] * 1000) for x in data_X if int(x[0] * 10) == season_num))
-            # Update entry with available episodes
             entry_episode.delete(0, tk.END)
             if episodes:
                 entry_episode.insert(0, episodes[0])
         except:
             pass
+
 
 def save_model_command():
     """Command handler for saving model"""
@@ -223,7 +574,6 @@ def save_model_command():
         messagebox.showerror("Error", "Model not loaded or trained. Please load or train a model first.")
         return
     
-    # Suggest default filename
     default_filename = entry_model_name.get() + ".keras"
     
     filepath = filedialog.asksaveasfilename(
@@ -236,13 +586,11 @@ def save_model_command():
     if not filepath:
         return
     
-    # Update the entry field
     entry_save_path.delete(0, tk.END)
     entry_save_path.insert(0, filepath)
     
-    # Save the model
-    if save_model(current_model, filepath):
-        messagebox.showinfo("Success", f"Model saved successfully: {filepath}")
+    save_model(current_model, filepath)
+
 
 def load_model_command():
     """Command handler for loading model"""
@@ -255,18 +603,16 @@ def load_model_command():
     if not filepath:
         return
     
-    # Update the entry field
     entry_load_path.delete(0, tk.END)
     entry_load_path.insert(0, filepath)
     
-    # Load the model
     current_model = load_model(filepath)
     
-    # Update model name field with filename without extension
     if current_model:
         model_name = os.path.splitext(os.path.basename(filepath))[0]
         entry_model_name.delete(0, tk.END)
         entry_model_name.insert(0, model_name)
+
 
 def validate_episode_number(episode_str):
     """Validate that episode number is a natural number"""
@@ -278,6 +624,7 @@ def validate_episode_number(episode_str):
     except ValueError:
         return False, None
 
+
 def update_time_from_slider():
     """Update time entries based on slider percentage"""
     global updating_time
@@ -287,10 +634,8 @@ def update_time_from_slider():
     updating_time = True
     
     try:
-        # Get percentage from slider
         percentage = scale_timestamp.get()
         
-        # Calculate total seconds from length entries
         try:
             hours = int(length_hours_var.get())
             minutes = int(length_minutes_var.get())
@@ -300,15 +645,12 @@ def update_time_from_slider():
             total_seconds = 0
         
         if total_seconds > 0:
-            # Calculate current time in seconds
             current_seconds = (percentage / 100.0) * total_seconds
             
-            # Convert to hours, minutes, seconds
             hours = int(current_seconds // 3600)
             minutes = int((current_seconds % 3600) // 60)
             seconds = int(current_seconds % 60)
             
-            # Update time entries
             current_hours_var.set(f"{hours:02d}")
             current_minutes_var.set(f"{minutes:02d}")
             current_seconds_var.set(f"{seconds:02d}")
@@ -316,6 +658,7 @@ def update_time_from_slider():
         print(f"Error updating time from slider: {e}")
     
     updating_time = False
+
 
 def update_slider_from_time():
     """Update slider based on time entries"""
@@ -326,7 +669,6 @@ def update_slider_from_time():
     updating_time = True
     
     try:
-        # Get current time from entries
         try:
             current_hours = int(current_hours_var.get())
             current_minutes = int(current_minutes_var.get())
@@ -335,21 +677,18 @@ def update_slider_from_time():
         except ValueError:
             current_total = 0
         
-        # Get total seconds from length entries
         try:
             length_hours = int(length_hours_var.get())
             length_minutes = int(length_minutes_var.get())
             length_seconds = int(length_seconds_var.get())
             total_seconds = length_hours * 3600 + length_minutes * 60 + length_seconds
         except ValueError:
-            total_seconds = 1  # Avoid division by zero
+            total_seconds = 1
         
         if total_seconds > 0:
-            # Calculate percentage
             percentage = (current_total / total_seconds) * 100
-            percentage = max(0, min(100, percentage))  # Clamp between 0-100
+            percentage = max(0, min(100, percentage))
             
-            # Update slider and label
             scale_timestamp.set(percentage)
             label_timestamp_value.config(text=f"{percentage:.1f}%")
     except Exception as e:
@@ -357,20 +696,20 @@ def update_slider_from_time():
     
     updating_time = False
 
+
 def update_time_display(val):
     """Update timestamp label and time entries when slider changes"""
-    # Update percentage label
     percentage = float(val)
     label_timestamp_value.config(text=f"{percentage:.1f}%")
-    
-    # Update time entries
     update_time_from_slider()
+
 
 def validate_time_entry(P):
     """Validate time entry fields (only digits, max 2 digits)"""
     if P == "" or (P.isdigit() and len(P) <= 2):
         return True
     return False
+
 
 def predict_point():
     """Predict coordinates for a single point"""
@@ -380,13 +719,11 @@ def predict_point():
         return
     
     try:
-        # Get season number from name
         if season_names:
             season = season_names.index(combo_season.get()) + 1
         else:
             season = int(combo_season.get().split()[-1])
             
-        # Validate episode number
         episode_str = entry_episode.get()
         is_valid, episode = validate_episode_number(episode_str)
         if not is_valid:
@@ -395,20 +732,25 @@ def predict_point():
             
         moment = scale_timestamp.get() / 100.0
         
-        # Normalize inputs
         season_norm = season / 10.0
         episode_norm = episode / 1000.0
         moment_norm = moment
         
-        # Make prediction
         input_data = np.array([[season_norm, episode_norm, moment_norm]])
         predictions = current_model.predict(input_data, verbose=0)[0]
         
-        # Update points on canvases
         update_canvas_points(predictions[0], predictions[1], predictions[2], predictions[3])
         
+        # Update current points for anchor display
+        current_points[0] = predictions[0]
+        current_points[1] = predictions[1]
+        current_points[2] = predictions[2]
+        current_points[3] = predictions[3]
+        update_nearest_anchor_display()
+        
     except Exception as e:
-        messagebox.showerror("Error", f"Error training model: {e}")
+        messagebox.showerror("Error", f"Error during prediction: {e}")
+
 
 def predict_episode():
     """Start/stop episode prediction"""
@@ -418,7 +760,6 @@ def predict_episode():
         return
     
     try:
-        # Validate episode number before starting prediction
         episode_str = entry_episode.get()
         is_valid, episode = validate_episode_number(episode_str)
         if not is_valid:
@@ -429,22 +770,20 @@ def predict_episode():
         return
     
     if is_predicting_episode:
-        # Stop prediction
         is_predicting_episode = False
         button_predict_episode.config(text="Predict Episode")
     else:
-        # Start prediction
         is_predicting_episode = True
         button_predict_episode.config(text="Stop")
         episode_prediction_thread = threading.Thread(target=predict_episode_thread)
         episode_prediction_thread.daemon = True
         episode_prediction_thread.start()
 
+
 def predict_episode_thread():
     """Thread function for episode prediction"""
     global is_predicting_episode
     try:
-        # Get season number from name
         if season_names:
             season = season_names.index(combo_season.get()) + 1
         else:
@@ -452,67 +791,69 @@ def predict_episode_thread():
             
         episode = int(entry_episode.get())
         
-        # Normalize inputs
         season_norm = season / 10.0
         episode_norm = episode / 1000.0
         
-        # Predict for each moment (0% to 100% with 1% steps)
         start_time = time.time()
         for moment in range(0, 101):
             if not is_predicting_episode:
                 break
                 
-            # Calculate elapsed time and adjust moment to complete in 10 seconds
             elapsed_time = time.time() - start_time
-            target_time = moment * 0.1  # 10 seconds for 100% (0.1s per 1%)
+            target_time = moment * 0.1
             
             if elapsed_time < target_time:
                 time.sleep(target_time - elapsed_time)
                 
             moment_norm = moment / 100.0
             
-            # Make prediction
             input_data = np.array([[season_norm, episode_norm, moment_norm]])
             predictions = current_model.predict(input_data, verbose=0)[0]
             
-            # Update UI in main thread
             root.after(0, lambda m=moment, p=predictions: update_episode_prediction_ui(m, p))
             
     except Exception as e:
-        root.after(0, lambda: messagebox.showerror("Error", f"Error training model: {e}"))
+        root.after(0, lambda: messagebox.showerror("Error", f"Error during episode prediction: {e}"))
     
     finally:
         is_predicting_episode = False
         root.after(0, lambda: button_predict_episode.config(text="Predict Episode"))
 
+
 def update_episode_prediction_ui(moment, predictions):
     """Update UI during episode prediction"""
     scale_timestamp.set(moment)
     update_canvas_points(predictions[0], predictions[1], predictions[2], predictions[3])
+    
+    # Update current points for anchor display
+    current_points[0] = predictions[0]
+    current_points[1] = predictions[1]
+    current_points[2] = predictions[2]
+    current_points[3] = predictions[3]
+    update_nearest_anchor_display()
+    
     root.update_idletasks()
+
 
 def update_canvas_points(x1_norm, y1_norm, x2_norm, y2_norm):
     """Update canvas points with new coordinates"""
-    # Convert normalized coordinates to canvas coordinates
     x1 = x1_norm * 300
-    y1 = (1 - y1_norm) * 300  # Invert Y axis
+    y1 = (1 - y1_norm) * 300
     x2 = x2_norm * 300
-    y2 = (1 - y2_norm) * 300  # Invert Y axis
+    y2 = (1 - y2_norm) * 300
     
-    # Update point positions
     canvas_emo.coords(point_emo, x1-5, y1-5, x1+5, y1+5)
     canvas_plot.coords(point_plot, x2-5, y2-5, x2+5, y2+5)
     
-    # Update coordinate labels
     x1_var.set(f"{x1_norm:.3f}")
     y1_var.set(f"{y1_norm:.3f}")
     x2_var.set(f"{x2_norm:.3f}")
     y2_var.set(f"{y2_norm:.3f}")
 
+
 def create_capsule():
     """Create a prediction capsule for the selected episode"""
     try:
-        # First ask for save location
         filepath = filedialog.asksaveasfilename(
             title="Save Capsule",
             defaultextension=".lvp",
@@ -521,84 +862,72 @@ def create_capsule():
         if not filepath:
             return
             
-        # Get season number from name
         if season_names:
             season = season_names.index(combo_season.get()) + 1
         else:
             season = int(combo_season.get().split()[-1])
             
-        # Validate episode number
         episode_str = entry_episode.get()
         is_valid, episode = validate_episode_number(episode_str)
         if not is_valid:
             messagebox.showerror("Error", "Episode number must be a natural number (1, 2, 3, ...).")
             return
         
-        # Create progress window with dark blue theme
         progress_window = tk.Toplevel(root)
         progress_window.title("Capsule Creation Progress")
         progress_window.geometry("400x200")
         progress_window.resizable(False, False)
         progress_window.configure(bg='#2c3e50')
         
-        # Set capsule window icon
         icon_path = resource_path("lo.ico")
         if os.path.exists(icon_path):
             progress_window.iconbitmap(icon_path)
         
-        # Apply dark theme to labels
         style = ttk.Style()
         style.configure("Capsule.TLabel", background="#2c3e50", foreground="#ecf0f1")
         
         ttk.Label(progress_window, text=f"Creating capsule for season {season}, episode {episode}", 
                  style="Capsule.TLabel").pack(pady=10)
         
-        # Create custom progress bar with turquoise color
         progress_frame = tk.Frame(progress_window, bg="#2c3e50")
         progress_frame.pack(pady=10)
         
-        progress_bar = ttk.Progressbar(progress_frame, orient=tk.HORIZONTAL, length=350, mode='determinate')
-        progress_bar.pack()
+        progress_bar_capsule = ttk.Progressbar(progress_frame, orient=tk.HORIZONTAL, length=350, mode='determinate')
+        progress_bar_capsule.pack()
         
-        # Configure progress bar style for turquoise color
         style.configure("Capsule.Horizontal.TProgressbar", 
-                       background="#1abc9c",  # Turquoise color
+                       background="#1abc9c",
                        troughcolor="#34495e")
         
-        progress_bar.configure(style="Capsule.Horizontal.TProgressbar")
+        progress_bar_capsule.configure(style="Capsule.Horizontal.TProgressbar")
         
         progress_label = ttk.Label(progress_window, text="0.0%", style="Capsule.TLabel")
         progress_label.pack(pady=5)
         
-        # Start capsule creation in a separate thread
         threading.Thread(target=create_capsule_thread, 
-                        args=(season, episode, filepath, progress_bar, progress_label, progress_window)).start()
+                        args=(season, episode, filepath, progress_bar_capsule, progress_label, progress_window)).start()
         
     except Exception as e:
         messagebox.showerror("Error", f"Error creating capsule: {e}")
 
-def create_capsule_thread(season, episode, filepath, progress_bar, progress_label, progress_window):
+
+def create_capsule_thread(season, episode, filepath, progress_bar_capsule, progress_label, progress_window):
     """Thread function for capsule creation"""
     try:
-        # Normalize inputs
         season_norm = season / 10.0
         episode_norm = episode / 1000.0
         
-        # Create capsule data structure with new format
         moments = []
         quartets = []
         
-        # Predict for 1000 frames (0.0% to 100.0% with 0.1% steps)
         total_frames = 1000
         for i in range(total_frames):
-            moment = i * 0.1  # 0.0% to 100.0% with 0.1% steps
+            moment = i * 0.1
             moment_norm = moment / 100.0
             
-            # Make prediction
             input_data = np.array([[season_norm, episode_norm, moment_norm]])
             predictions = current_model.predict(input_data, verbose=0)[0]
             
-            # Add to capsule data in new format
             moments.append(float(moment))
             quartets.append([
                 float(predictions[0]),
@@ -607,13 +936,11 @@ def create_capsule_thread(season, episode, filepath, progress_bar, progress_labe
                 float(predictions[3])
             ])
             
-            # Update progress
             progress_percent = (i + 1) / total_frames * 100
-            progress_bar['value'] = progress_percent
+            progress_bar_capsule['value'] = progress_percent
             progress_label.config(text=f"{progress_percent:.1f}%")
             progress_window.update_idletasks()
         
-        # Save to file with new format
         capsule_data = {
             "season": season,
             "episode": episode,
@@ -624,13 +951,13 @@ def create_capsule_thread(season, episode, filepath, progress_bar, progress_labe
         with open(filepath, 'w') as f:
             json.dump(capsule_data, f, indent=4)
             
-        # Show success message
         progress_window.after(0, lambda: messagebox.showinfo("Success", f"Capsule saved successfully: {filepath}"))
         progress_window.after(0, progress_window.destroy)
             
     except Exception as e:
         progress_window.after(0, lambda: messagebox.showerror("Error", f"Error creating capsule: {e}"))
         progress_window.after(0, progress_window.destroy)
+
 
 def load_season_names():
     """Load season names from a text file"""
@@ -642,10 +969,10 @@ def load_season_names():
             with open(filepath, 'r', encoding='utf-8') as f:
                 season_names = [line.strip() for line in f if line.strip()]
             messagebox.showinfo("Success", "Season names loaded successfully")
-            # Update seasons list with all loaded names
             update_seasons_list()
         except Exception as e:
             messagebox.showerror("Error", f"Error loading season names: {e}")
+
 
 def toggle_fullscreen():
     """Toggle fullscreen mode"""
@@ -653,14 +980,17 @@ def toggle_fullscreen():
     is_fullscreen = not is_fullscreen
     root.attributes("-fullscreen", is_fullscreen)
 
+
 def on_mousewheel(event):
     """Handle mousewheel scrolling"""
     canvas.yview_scroll(int(-1 * (event.delta / 120) * 10), "units")
+
 
 def save_config():
     """Save configuration to file"""
     with open(CONFIG_FILE, 'w') as configfile:
         config.write(configfile)
+
 
 def load_config():
     """Load configuration from file"""
@@ -675,12 +1005,131 @@ def load_config():
         config['Paths']['load_path'] = ''
         save_config()
 
+
+# ==================== ANCHOR FUNCTIONS ====================
+
+def load_anchors_from_config():
+    """Load anchors from configuration file"""
+    anchors = []
+    if config.has_section('Anchors'):
+        for key in config.options('Anchors'):
+            if key.startswith('anchor_'):
+                try:
+                    anchor_data = json.loads(config.get('Anchors', key))
+                    anchor = Anchor.from_dict(anchor_data)
+                    anchors.append(anchor)
+                except Exception as e:
+                    print(f"Error loading anchor {key}: {e}")
+    
+    if not anchors:
+        default_anchors = [
+            Anchor("Idle", [0.5, 0.5, 0.5, 0.5])
+        ]
+        anchors = default_anchors
+        save_anchors_to_config(anchors)
+    
+    return anchors
+
+
+def save_anchors_to_config(anchors):
+    """Save anchors to configuration file"""
+    if not config.has_section('Anchors'):
+        config.add_section('Anchors')
+    
+    for key in config.options('Anchors'):
+        config.remove_option('Anchors', key)
+    
+    for i, anchor in enumerate(anchors):
+        config.set('Anchors', f'anchor_{i}', json.dumps(anchor.to_dict()))
+    
+    save_config()
+
+
+def add_anchor_from_current_points():
+    """Create a new anchor from current point positions"""
+    name = simpledialog.askstring("Add Anchor", "Enter name for this anchor:", parent=root)
+    if not name:
+        return
+    
+    if any(anchor.name == name for anchor in anchors):
+        if not messagebox.askyesno("Warning", f"Anchor '{name}' already exists. Overwrite?"):
+            return
+        anchors[:] = [a for a in anchors if a.name != name]
+    
+    new_anchor = Anchor(name, current_points)
+    anchors.append(new_anchor)
+    save_anchors_to_config(anchors)
+    
+    messagebox.showinfo("Success", f"Anchor '{name}' added successfully!")
+    update_nearest_anchor_display()
+
+
+def open_anchor_menu():
+    """Open the anchor management window"""
+    def save_callback(anchors_list):
+        global anchors
+        anchors = anchors_list
+        save_anchors_to_config(anchors)
+    
+    def update_display_callback():
+        update_nearest_anchor_display()
+    
+    AnchorMenu(root, anchors, save_callback, update_display_callback)
+
+
+def calculate_distance(points1, points2):
+    """Calculate Euclidean distance between two 4D points"""
+    return sum((p1 - p2) ** 2 for p1, p2 in zip(points1, points2)) ** 0.5
+
+
+def find_nearest_anchor():
+    """Find the nearest anchor to current points"""
+    if not anchors:
+        return None, None
+    
+    min_distance = float('inf')
+    nearest_anchor = None
+    
+    for anchor in anchors:
+        distance = calculate_distance(current_points, anchor.coordinates)
+        if distance < min_distance:
+            min_distance = distance
+            nearest_anchor = anchor
+    
+    return nearest_anchor, min_distance
+
+
+def update_nearest_anchor_display():
+    """Update the display showing nearest anchor"""
+    if not nearest_anchor_label:
+        return
+    
+    nearest_anchor, distance = find_nearest_anchor()
+    
+    if nearest_anchor:
+        max_distance = calculate_distance([0,0,0,0], [1,1,1,1])
+        percentage = (1 - (distance / max_distance)) * 100
+        
+        nearest_anchor_label.config(
+            text=f"📍 Nearest Anchor: {nearest_anchor.name} (Match: {percentage:.1f}%)",
+            foreground="#40E0D0"
+        )
+    else:
+        nearest_anchor_label.config(text="📍 No anchors available", foreground="#ecf0f1")
+
+
+# ==================== INITIALIZATION ====================
+
 # Initialize the main Tkinter window
 root = tk.Tk()
 root.title("LoViewer")
 
 # Load configuration
 load_config()
+
+# Load anchors
+anchors = load_anchors_from_config()
+current_points = [0.5, 0.5, 0.5, 0.5]  # Current point positions (x1, y1, x2, y2)
 
 # --- Color Palette (Dark theme like Pointer) ---
 BG_COLOR = "#2c3e50"
@@ -691,7 +1140,7 @@ LABEL_BG = BG_COLOR
 LABEL_FG = "#ecf0f1"
 ENTRY_BG = "white"
 ENTRY_FG = "black"
-PROGRESS_BG = "#1abc9c"  # Turquoise color
+PROGRESS_BG = "#1abc9c"
 
 # Apply a Modern Theme
 style = ttk.Style()
@@ -704,11 +1153,11 @@ style.configure("TLabelframe", background=FRAME_BG)
 style.configure("TLabelframe.Label", font=('Arial', 10, 'bold'), background=FRAME_BG, foreground=LABEL_FG)
 style.configure("Horizontal.TProgressbar", background=PROGRESS_BG, troughcolor=FRAME_BG)
 
-# Configure window to start in fullscreen but reduced by 5%
+# Configure window
 screen_width = root.winfo_screenwidth()
 screen_height = root.winfo_screenheight()
-window_width = int(screen_width * 0.95)  # 5% reduction
-window_height = int(screen_height * 0.95)  # 5% reduction
+window_width = int(screen_width * 0.95)
+window_height = int(screen_height * 0.95)
 x_pos = (screen_width - window_width) // 2
 y_pos = (screen_height - window_height) // 2
 root.geometry(f"{window_width}x{window_height}+{x_pos}+{y_pos}")
@@ -782,7 +1231,6 @@ button_train.grid(row=2, column=0, columnspan=2, pady=10)
 progress_bar = ttk.Progressbar(frame_training, orient=tk.HORIZONTAL, length=200, mode='determinate', style="Horizontal.TProgressbar")
 progress_bar.grid(row=3, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
 
-# Add entry fields for save/load paths
 label_save_path = ttk.Label(frame_model_info, text="Save Path:")
 label_save_path.grid(row=2, column=0, sticky="w", padx=5, pady=5)
 entry_save_path = ttk.Entry(frame_model_info, width=20)
@@ -797,15 +1245,12 @@ entry_load_path.grid(row=3, column=1, padx=5, pady=5)
 center_label = ttk.Label(center_frame, text="PREDICTION", font=('Arial', 12, 'bold'))
 center_label.pack(pady=10)
 
-# Add time input fields like in Pointer
 frame_time_input = ttk.Frame(center_frame)
 frame_time_input.pack(pady=5, fill=tk.X, padx=10)
 
-# Current time input
 label_timecode = ttk.Label(frame_time_input, text="Timecode (HH:MM:SS):")
 label_timecode.grid(row=0, column=0, sticky="w", padx=5, pady=5)
 
-# StringVars for time entries
 current_hours_var = tk.StringVar(value="00")
 current_minutes_var = tk.StringVar(value="00")
 current_seconds_var = tk.StringVar(value="00")
@@ -813,10 +1258,8 @@ length_hours_var = tk.StringVar(value="00")
 length_minutes_var = tk.StringVar(value="20")
 length_seconds_var = tk.StringVar(value="00")
 
-# Validation function for time entries
 validate_cmd = root.register(validate_time_entry)
 
-# Current time entries
 time_frame = ttk.Frame(frame_time_input)
 time_frame.grid(row=0, column=1, columnspan=3, sticky="w", padx=5, pady=5)
 
@@ -829,7 +1272,6 @@ ttk.Label(time_frame, text=":").pack(side=tk.LEFT)
 current_seconds_entry = ttk.Entry(time_frame, textvariable=current_seconds_var, width=3, validate="key", validatecommand=(validate_cmd, '%P'))
 current_seconds_entry.pack(side=tk.LEFT)
 
-# Episode length input
 label_episode_length = ttk.Label(frame_time_input, text="Episode Length (HH:MM:SS):")
 label_episode_length.grid(row=1, column=0, sticky="w", padx=5, pady=5)
 
@@ -845,7 +1287,6 @@ ttk.Label(length_frame, text=":").pack(side=tk.LEFT)
 length_seconds_entry = ttk.Entry(length_frame, textvariable=length_seconds_var, width=3, validate="key", validatecommand=(validate_cmd, '%P'))
 length_seconds_entry.pack(side=tk.LEFT)
 
-# Set trace callbacks for time entries
 current_hours_var.trace_add('write', lambda *args: update_slider_from_time())
 current_minutes_var.trace_add('write', lambda *args: update_slider_from_time())
 current_seconds_var.trace_add('write', lambda *args: update_slider_from_time())
@@ -876,14 +1317,12 @@ scale_timestamp.grid(row=1, column=1, columnspan=3, sticky="ew", padx=5, pady=5)
 label_timestamp_value = ttk.Label(frame_selection, text="0.0%")
 label_timestamp_value.grid(row=1, column=4, padx=5, pady=5)
 
-# Update timestamp label and time entries when scale changes
 scale_timestamp.configure(command=update_time_display)
 
 # Canvases for EmoPlain and PlotPlain
 frame_canvases = ttk.Frame(center_frame)
 frame_canvases.pack(pady=10, fill=tk.BOTH, expand=True, padx=10)
 
-# Load background images
 emo_image = Image.open(resource_path("EmoPlain.png"))
 emo_image = emo_image.resize((300, 300), Image.Resampling.LANCZOS)
 emo_bg = ImageTk.PhotoImage(emo_image)
@@ -892,7 +1331,6 @@ plot_image = Image.open(resource_path("PlotPlain.png"))
 plot_image = plot_image.resize((300, 300), Image.Resampling.LANCZOS)
 plot_bg = ImageTk.PhotoImage(plot_image)
 
-# Create frames for each canvas with coordinates
 frame_emo = ttk.Frame(frame_canvases)
 frame_emo.pack(side=tk.LEFT, padx=10)
 
@@ -901,7 +1339,6 @@ canvas_emo.pack()
 canvas_emo.create_image(0, 0, anchor="nw", image=emo_bg)
 point_emo = canvas_emo.create_oval(145, 145, 155, 155, fill="red", outline="red")
 
-# Coordinate labels for emotion point
 emo_coord_frame = ttk.Frame(frame_emo)
 emo_coord_frame.pack(pady=5)
 
@@ -921,7 +1358,6 @@ canvas_plot.pack()
 canvas_plot.create_image(0, 0, anchor="nw", image=plot_bg)
 point_plot = canvas_plot.create_oval(145, 145, 155, 155, fill="blue", outline="blue")
 
-# Coordinate labels for plot point
 plot_coord_frame = ttk.Frame(frame_plot)
 plot_coord_frame.pack(pady=5)
 
@@ -933,6 +1369,18 @@ ttk.Label(plot_coord_frame, text="Y:").pack(side=tk.LEFT)
 y2_var = tk.StringVar(value="0.500")
 ttk.Label(plot_coord_frame, textvariable=y2_var, width=6).pack(side=tk.LEFT)
 
+# Anchor buttons frame (between canvases and prediction buttons)
+frame_anchor_buttons = ttk.Frame(center_frame)
+frame_anchor_buttons.pack(pady=10, fill=tk.X, padx=10)
+
+ttk.Button(frame_anchor_buttons, text="Add Anchor", command=add_anchor_from_current_points, width=15).pack(side=tk.LEFT, padx=5)
+ttk.Button(frame_anchor_buttons, text="Anchor Menu", command=open_anchor_menu, width=15).pack(side=tk.LEFT, padx=5)
+
+# Nearest anchor display label
+nearest_anchor_label = ttk.Label(center_frame, text="📍 Nearest Anchor: None", font=('Arial', 10, 'bold'))
+nearest_anchor_label.pack(pady=5)
+update_nearest_anchor_display()
+
 frame_prediction_buttons = ttk.Frame(center_frame)
 frame_prediction_buttons.pack(pady=10, fill=tk.X, padx=10)
 
@@ -942,7 +1390,6 @@ button_predict_point.pack(side=tk.LEFT, padx=5)
 button_predict_episode = ttk.Button(frame_prediction_buttons, text="Predict Episode", command=predict_episode)
 button_predict_episode.pack(side=tk.RIGHT, padx=5)
 
-# Button to load season names - moved to center frame near season selection
 button_load_season_names = ttk.Button(frame_selection, text="Load Names", command=load_season_names, width=20)
 button_load_season_names.grid(row=0, column=4, padx=5, pady=5)
 
@@ -962,7 +1409,6 @@ entry_data_path.insert(0, config['Paths'].get('data_path', 'IDS.json'))
 button_load_data = ttk.Button(frame_dataset, text="Load Data", command=load_data_command)
 button_load_data.grid(row=1, column=0, columnspan=2, pady=10)
 
-# Add fullscreen button
 button_fullscreen = ttk.Button(frame_dataset, text="Fullscreen", command=toggle_fullscreen)
 button_fullscreen.grid(row=2, column=0, columnspan=2, pady=10)
 

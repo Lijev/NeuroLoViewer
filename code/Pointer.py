@@ -1,6 +1,6 @@
 import json
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog, simpledialog
 import os
 from PIL import Image, ImageTk
 import time
@@ -12,6 +12,353 @@ import threading
 import sys
 import configparser
 
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+class Anchor:
+    """Класс для хранения данных якоря"""
+    def __init__(self, name, coordinates):
+        self.name = name
+        self.coordinates = coordinates.copy()  # [x1, y1, x2, y2]
+        self.created_at = time.time()
+    
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "coordinates": self.coordinates,
+            "created_at": self.created_at
+        }
+    
+    @classmethod
+    def from_dict(cls, data):
+        anchor = cls(data["name"], data["coordinates"])
+        anchor.created_at = data.get("created_at", time.time())
+        return anchor
+
+class AnchorMenu:
+    """Окно управления якорями"""
+    def __init__(self, parent, point_creator):
+        self.parent = parent
+        self.point_creator = point_creator
+        self.window = tk.Toplevel(parent)
+        self.window.title("Anchor Manager")
+        self.window.geometry("650x550")
+        self.window.configure(bg='#2c3e50')
+        
+        # Set icon
+        try:
+            icon_path = point_creator.resource_path("lo.ico")
+            if os.path.exists(icon_path):
+                self.window.iconbitmap(icon_path)
+        except:
+            pass
+        
+        # Make window not modal
+        self.window.transient(parent)
+        
+        # Bind close event to cleanup
+        self.window.protocol("WM_DELETE_WINDOW", self.on_close)
+        
+        self.create_widgets()
+        self.refresh_anchor_list()
+    
+    def on_close(self):
+        """Handle window close"""
+        self.window.destroy()
+    
+    def create_widgets(self):
+        # Title
+        title_label = ttk.Label(self.window, text="ANCHOR MANAGER", font=('Arial', 14, 'bold'))
+        title_label.pack(pady=10)
+        
+        # Import/Export buttons frame
+        io_frame = ttk.Frame(self.window)
+        io_frame.pack(pady=5)
+        
+        # Changed to ↓ and ↑ symbols
+        ttk.Button(io_frame, text="↓AnchorBook", command=self.import_anchors, width=12).pack(side="left", padx=5)
+        ttk.Button(io_frame, text="↑AnchorBook", command=self.export_anchors, width=12).pack(side="left", padx=5)
+        
+        # List frame
+        list_frame = ttk.LabelFrame(self.window, text="Anchors", padding=10)
+        list_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        # Create Treeview for anchors
+        columns = ("Name", "X1", "Y1", "X2", "Y2")
+        self.tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=12)
+        
+        # Define headings
+        self.tree.heading("Name", text="Anchor Name")
+        self.tree.heading("X1", text="Emotion X")
+        self.tree.heading("Y1", text="Emotion Y")
+        self.tree.heading("X2", text="Plot X")
+        self.tree.heading("Y2", text="Plot Y")
+        
+        # Set column widths
+        self.tree.column("Name", width=150)
+        self.tree.column("X1", width=80)
+        self.tree.column("Y1", width=80)
+        self.tree.column("X2", width=80)
+        self.tree.column("Y2", width=80)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Bind selection event
+        self.tree.bind('<<TreeviewSelect>>', self.on_anchor_selected)
+        
+        # Buttons frame
+        buttons_frame = ttk.Frame(self.window)
+        buttons_frame.pack(pady=15)
+        
+        # 5 buttons in a grid
+        btn_style = {"width": 12, "padding": 5}
+        
+        ttk.Button(buttons_frame, text="Clone", command=self.clone_anchor, **btn_style).grid(row=0, column=0, padx=5, pady=5)
+        ttk.Button(buttons_frame, text="Rename", command=self.rename_anchor, **btn_style).grid(row=0, column=1, padx=5, pady=5)
+        ttk.Button(buttons_frame, text="Delete", command=self.delete_anchor, **btn_style).grid(row=0, column=2, padx=5, pady=5)
+        ttk.Button(buttons_frame, text="Move", command=self.move_anchor, **btn_style).grid(row=1, column=0, padx=5, pady=5)
+        ttk.Button(buttons_frame, text="Use", command=self.use_anchor, **btn_style).grid(row=1, column=1, padx=5, pady=5)
+        ttk.Button(buttons_frame, text="Close", command=self.on_close, **btn_style).grid(row=1, column=2, padx=5, pady=5)
+        
+        self.selected_anchor = None
+    
+    def refresh_anchor_list(self):
+        """Обновить список якорей"""
+        # Clear existing items
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        
+        # Add anchors to tree
+        for anchor in self.point_creator.anchors:
+            coords = anchor.coordinates
+            self.tree.insert("", "end", values=(
+                anchor.name,
+                f"{coords[0]:.3f}",
+                f"{coords[1]:.3f}",
+                f"{coords[2]:.3f}",
+                f"{coords[3]:.3f}"
+            ), tags=(anchor.name,))
+    
+    def on_anchor_selected(self, event):
+        """Обработка выбора якоря"""
+        selection = self.tree.selection()
+        if selection:
+            item = self.tree.item(selection[0])
+            anchor_name = item['values'][0]
+            # Find anchor by name
+            for anchor in self.point_creator.anchors:
+                if anchor.name == anchor_name:
+                    self.selected_anchor = anchor
+                    break
+    
+    def import_anchors(self):
+        """Import anchors from AnchorBook file"""
+        filepath = filedialog.askopenfilename(
+            title="Import AnchorBook",
+            filetypes=[("AnchorBook files", "*.json"), ("All files", "*.*")],
+            parent=self.window
+        )
+        
+        if filepath:
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    anchorbook_data = json.load(f)
+                
+                # Validate format
+                if "anchors" in anchorbook_data and isinstance(anchorbook_data["anchors"], list):
+                    imported_count = 0
+                    for anchor_data in anchorbook_data["anchors"]:
+                        # Check if anchor with same name exists
+                        existing = [a for a in self.point_creator.anchors if a.name == anchor_data["name"]]
+                        if existing:
+                            if messagebox.askyesno("Overwrite", 
+                                f"Anchor '{anchor_data['name']}' already exists. Overwrite?",
+                                parent=self.window):
+                                self.point_creator.anchors.remove(existing[0])
+                                new_anchor = Anchor.from_dict(anchor_data)
+                                self.point_creator.anchors.append(new_anchor)
+                                imported_count += 1
+                        else:
+                            new_anchor = Anchor.from_dict(anchor_data)
+                            self.point_creator.anchors.append(new_anchor)
+                            imported_count += 1
+                    
+                    self.point_creator.save_anchors_to_config()
+                    self.refresh_anchor_list()
+                    messagebox.showinfo("Success", f"Imported {imported_count} anchors from AnchorBook!", parent=self.window)
+                else:
+                    messagebox.showerror("Error", "Invalid AnchorBook format!", parent=self.window)
+                    
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to import AnchorBook: {str(e)}", parent=self.window)
+    
+    def export_anchors(self):
+        """Export anchors to AnchorBook file"""
+        if not self.point_creator.anchors:
+            messagebox.showwarning("Warning", "No anchors to export!", parent=self.window)
+            return
+        
+        filepath = filedialog.asksaveasfilename(
+            title="Export AnchorBook",
+            defaultextension=".json",
+            filetypes=[("AnchorBook files", "*.json"), ("All files", "*.*")],
+            parent=self.window
+        )
+        
+        if filepath:
+            try:
+                anchorbook_data = {
+                    "version": "1.0",
+                    "created": time.time(),
+                    "anchor_count": len(self.point_creator.anchors),
+                    "anchors": [anchor.to_dict() for anchor in self.point_creator.anchors]
+                }
+                
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(anchorbook_data, f, indent=4, ensure_ascii=False)
+                
+                messagebox.showinfo("Success", f"Exported {len(self.point_creator.anchors)} anchors to AnchorBook!", parent=self.window)
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to export AnchorBook: {str(e)}", parent=self.window)
+    
+    def clone_anchor(self):
+        """Клонировать выбранный якорь"""
+        if not self.selected_anchor:
+            messagebox.showwarning("Warning", "Please select an anchor first!", parent=self.window)
+            return
+        
+        # Ask for new name
+        new_name = simpledialog.askstring("Clone Anchor", f"Enter name for cloned anchor:", parent=self.window)
+        if new_name:
+            # Check if name already exists
+            if any(anchor.name == new_name for anchor in self.point_creator.anchors):
+                messagebox.showerror("Error", f"Anchor with name '{new_name}' already exists!", parent=self.window)
+                return
+            
+            # Create new anchor with same coordinates
+            new_anchor = Anchor(new_name, self.selected_anchor.coordinates)
+            self.point_creator.anchors.append(new_anchor)
+            self.point_creator.save_anchors_to_config()
+            self.refresh_anchor_list()
+            messagebox.showinfo("Success", f"Anchor '{new_name}' cloned successfully!", parent=self.window)
+    
+    def rename_anchor(self):
+        """Переименовать выбранный якорь"""
+        if not self.selected_anchor:
+            messagebox.showwarning("Warning", "Please select an anchor first!", parent=self.window)
+            return
+        
+        new_name = simpledialog.askstring("Rename Anchor", f"Enter new name for '{self.selected_anchor.name}':", parent=self.window)
+        if new_name:
+            # Check if name already exists
+            if any(anchor.name == new_name for anchor in self.point_creator.anchors):
+                messagebox.showerror("Error", f"Anchor with name '{new_name}' already exists!", parent=self.window)
+                return
+            
+            old_name = self.selected_anchor.name
+            self.selected_anchor.name = new_name
+            self.point_creator.save_anchors_to_config()
+            self.refresh_anchor_list()
+            messagebox.showinfo("Success", f"Anchor renamed from '{old_name}' to '{new_name}'!", parent=self.window)
+    
+    def delete_anchor(self):
+        """Удалить выбранный якорь"""
+        if not self.selected_anchor:
+            messagebox.showwarning("Warning", "Please select an anchor first!", parent=self.window)
+            return
+        
+        # Confirm deletion
+        if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete anchor '{self.selected_anchor.name}'?", parent=self.window):
+            self.point_creator.anchors.remove(self.selected_anchor)
+            self.point_creator.save_anchors_to_config()
+            self.selected_anchor = None
+            self.refresh_anchor_list()
+            messagebox.showinfo("Success", "Anchor deleted successfully!", parent=self.window)
+    
+    def move_anchor(self):
+        """Изменить координаты якоря через ввод чисел"""
+        if not self.selected_anchor:
+            messagebox.showwarning("Warning", "Please select an anchor first!", parent=self.window)
+            return
+        
+        # Create move dialog
+        move_dialog = tk.Toplevel(self.window)
+        move_dialog.title("Move Anchor")
+        move_dialog.geometry("300x250")
+        move_dialog.configure(bg='#2c3e50')
+        move_dialog.transient(self.window)
+        move_dialog.grab_set()
+        
+        ttk.Label(move_dialog, text=f"Moving Anchor: {self.selected_anchor.name}", font=('Arial', 10, 'bold')).pack(pady=10)
+        
+        # Create input fields
+        fields = [
+            ("Emotion X (0-1):", self.selected_anchor.coordinates[0]),
+            ("Emotion Y (0-1):", self.selected_anchor.coordinates[1]),
+            ("Plot X (0-1):", self.selected_anchor.coordinates[2]),
+            ("Plot Y (0-1):", self.selected_anchor.coordinates[3])
+        ]
+        
+        entries = []
+        for label_text, default_value in fields:
+            frame = ttk.Frame(move_dialog)
+            frame.pack(pady=5, padx=20, fill="x")
+            
+            ttk.Label(frame, text=label_text).pack(side="left")
+            entry = ttk.Entry(frame)
+            entry.insert(0, f"{default_value:.3f}")
+            entry.pack(side="right", expand=True, fill="x", padx=(10, 0))
+            entries.append(entry)
+        
+        def apply_move():
+            try:
+                new_coords = []
+                for entry in entries:
+                    value = float(entry.get())
+                    if 0 <= value <= 1:
+                        new_coords.append(value)
+                    else:
+                        messagebox.showerror("Error", "Coordinates must be between 0 and 1!", parent=move_dialog)
+                        return
+                
+                self.selected_anchor.coordinates = new_coords
+                self.point_creator.save_anchors_to_config()
+                self.refresh_anchor_list()
+                move_dialog.destroy()
+                messagebox.showinfo("Success", "Anchor moved successfully!", parent=self.window)
+                
+                # Update current points display if this anchor is being used
+                self.point_creator.update_nearest_anchor_display()
+                
+            except ValueError:
+                messagebox.showerror("Error", "Please enter valid numbers!", parent=move_dialog)
+        
+        ttk.Button(move_dialog, text="Apply", command=apply_move).pack(pady=15)
+    
+    def use_anchor(self):
+        """Переместить текущие точки на координаты якоря"""
+        if not self.selected_anchor:
+            messagebox.showwarning("Warning", "Please select an anchor first!", parent=self.window)
+            return
+        
+        # Move points to anchor coordinates
+        self.point_creator.set_point_position(1, self.selected_anchor.coordinates[0], self.selected_anchor.coordinates[1])
+        self.point_creator.set_point_position(2, self.selected_anchor.coordinates[2], self.selected_anchor.coordinates[3])
+        
+        # Update current points
+        self.point_creator.current_points = self.selected_anchor.coordinates.copy()
+        
+        # Update nearest anchor display
+        self.point_creator.update_nearest_anchor_display()
+        
+        messagebox.showinfo("Success", f"Points moved to anchor '{self.selected_anchor.name}'!", parent=self.window)
+        # Don't close the window automatically
+
 
 class PointCreator:
     def __init__(self, root):
@@ -22,6 +369,14 @@ class PointCreator:
         self.CONFIG_FILE = "config_pointer.ini"
         self.config = configparser.ConfigParser()
         self.load_config()
+        
+        # Anchors storage
+        self.anchors = []  # List of Anchor objects
+        self.load_anchors_from_config()
+        
+        # Episode playback variables
+        self.is_episode_playing = False
+        self.episode_animation_id = None
         
         # Set icon
         try:
@@ -63,9 +418,9 @@ class PointCreator:
         # Animation variables
         self.is_playing = False
         self.animation_start_time = 0
-        self.start_moment = 0  # Playback start moment
-        self.episode_data = {"moments": [], "quartets": []}  # New format for LVP
-        self.current_points = [0.5, 0.5, 0.5, 0.5]  # Current point positions (x1, y1, x2, y2)
+        self.start_moment = 0
+        self.episode_data = {"moments": [], "quartets": []}
+        self.current_points = [0.5, 0.5, 0.5, 0.5]
         
         # MP4 creation variables
         self.video_hours_var = tk.StringVar(value="0")
@@ -79,12 +434,115 @@ class PointCreator:
         # Initialize empty dataset
         self.data = {"X": [], "Y": []}
         
+        # Label for nearest anchor display
+        self.nearest_anchor_label = None
+        self.play_episode_button = None
+        
         self.create_widgets()
         self.load_background_images()
         
         # Check command line arguments
         if len(sys.argv) > 1 and sys.argv[1].endswith('.lvp'):
             self.load_capsule(sys.argv[1])
+    
+    def load_anchors_from_config(self):
+        """Load anchors from configuration file"""
+        self.anchors = []
+        if self.config.has_section('Anchors'):
+            for key in self.config.options('Anchors'):
+                if key.startswith('anchor_'):
+                    try:
+                        anchor_data = json.loads(self.config.get('Anchors', key))
+                        anchor = Anchor.from_dict(anchor_data)
+                        self.anchors.append(anchor)
+                    except Exception as e:
+                        print(f"Error loading anchor {key}: {e}")
+        
+        # Add default anchors if none exist
+        if not self.anchors:
+            default_anchors = [
+                Anchor("Idle", [0.5, 0.5, 0.5, 0.5])
+            ]
+            self.anchors = default_anchors
+            self.save_anchors_to_config()
+    
+    def save_anchors_to_config(self):
+        """Save anchors to configuration file"""
+        if not self.config.has_section('Anchors'):
+            self.config.add_section('Anchors')
+        
+        # Remove old anchor entries
+        for key in self.config.options('Anchors'):
+            self.config.remove_option('Anchors', key)
+        
+        # Save current anchors
+        for i, anchor in enumerate(self.anchors):
+            self.config.set('Anchors', f'anchor_{i}', json.dumps(anchor.to_dict()))
+        
+        self.save_config()
+    
+    def add_anchor_from_current_points(self):
+        """Create a new anchor from current point positions"""
+        # Ask for anchor name
+        name = simpledialog.askstring("Add Anchor", "Enter name for this anchor:", parent=self.root)
+        if not name:
+            return
+        
+        # Check if name already exists
+        if any(anchor.name == name for anchor in self.anchors):
+            if not messagebox.askyesno("Warning", f"Anchor '{name}' already exists. Overwrite?"):
+                return
+            # Remove existing anchor with same name
+            self.anchors = [a for a in self.anchors if a.name != name]
+        
+        # Create new anchor with current points
+        new_anchor = Anchor(name, self.current_points)
+        self.anchors.append(new_anchor)
+        self.save_anchors_to_config()
+        
+        messagebox.showinfo("Success", f"Anchor '{name}' added successfully!")
+        self.update_nearest_anchor_display()
+    
+    def calculate_distance(self, points1, points2):
+        """Calculate Euclidean distance between two 4D points"""
+        return sum((p1 - p2) ** 2 for p1, p2 in zip(points1, points2)) ** 0.5
+    
+    def find_nearest_anchor(self):
+        """Find the nearest anchor to current points"""
+        if not self.anchors:
+            return None, None
+        
+        min_distance = float('inf')
+        nearest_anchor = None
+        
+        for anchor in self.anchors:
+            distance = self.calculate_distance(self.current_points, anchor.coordinates)
+            if distance < min_distance:
+                min_distance = distance
+                nearest_anchor = anchor
+        
+        return nearest_anchor, min_distance
+    
+    def update_nearest_anchor_display(self):
+        """Update the display showing nearest anchor"""
+        if not self.nearest_anchor_label:
+            return
+        
+        nearest_anchor, distance = self.find_nearest_anchor()
+        
+        if nearest_anchor:
+            # Calculate max possible distance (distance from (0,0,0,0) to (1,1,1,1))
+            max_distance = self.calculate_distance([0,0,0,0], [1,1,1,1])
+            # Calculate percentage (inverted: closer = smaller distance = smaller percentage)
+            # We want: closer = higher percentage
+            percentage = (1 - (distance / max_distance)) * 100
+            
+            self.nearest_anchor_label.config(
+                text=f"📍 Nearest Anchor: {nearest_anchor.name} (Match: {percentage:.1f}%)",
+                foreground="#40E0D0"
+            )
+        else:
+            self.nearest_anchor_label.config(text="📍 No anchors available", foreground="#ecf0f1")
     
     def resource_path(self, relative_path):
         """Get absolute path to resource, works for dev and for PyInstaller"""
@@ -122,7 +580,7 @@ class PointCreator:
         LABEL_FG = "#ecf0f1"
         ENTRY_BG = "white"
         ENTRY_FG = "black"
-        PROGRESS_BG = "#40E0D0"  # Turquoise for progressbar
+        PROGRESS_BG = "#40E0D0"
         
         # Configure styles
         self.style.configure('TFrame', background=FRAME_BG)
@@ -157,6 +615,7 @@ class PointCreator:
                     "Final Reality",
                     "Heart of the Universe",
                     "Point of No Return",
+                    "Workshop [47]"
                     "???"
                 ]
         except Exception as e:
@@ -255,6 +714,10 @@ class PointCreator:
         self.moment_label = ttk.Label(timeline_frame, text="50.0%")
         self.moment_label.pack(pady=5)
         
+        # Play Episode button under timeline
+        self.play_episode_button = ttk.Button(timeline_frame, text="▶ Play Episode", command=self.toggle_episode_playback, width=20)
+        self.play_episode_button.pack(pady=10)
+        
         # Bind scale movement to update function
         self.moment_scale.configure(command=self.update_timestamp_from_scale)
         
@@ -312,9 +775,23 @@ class PointCreator:
         self.y2_var = tk.StringVar(value="0.500")
         ttk.Label(coord2_frame, textvariable=self.y2_var, width=6).pack(side="left")
         
-        # ADD button under squares
-        add_button = ttk.Button(center_frame, text="ADD", command=self.add_current_data, width=15)
-        add_button.pack(pady=10)
+        # Buttons frame under squares
+        buttons_bottom_frame = ttk.Frame(center_frame)
+        buttons_bottom_frame.pack(pady=10)
+        
+        add_button = ttk.Button(buttons_bottom_frame, text="ADD", command=self.add_current_data, width=10)
+        add_button.pack(side="left", padx=5)
+        
+        add_anchor_button = ttk.Button(buttons_bottom_frame, text="Add Anchor", command=self.add_anchor_from_current_points, width=12)
+        add_anchor_button.pack(side="left", padx=5)
+        
+        anchor_menu_button = ttk.Button(buttons_bottom_frame, text="Anchor Menu", command=self.open_anchor_menu, width=12)
+        anchor_menu_button.pack(side="left", padx=5)
+        
+        # Nearest anchor display label
+        self.nearest_anchor_label = ttk.Label(center_frame, text="📍 Nearest Anchor: None", font=('Arial', 10, 'bold'))
+        self.nearest_anchor_label.pack(pady=5)
+        self.update_nearest_anchor_display()
         
         # Bind point movement events
         self.canvas1.bind("<B1-Motion>", lambda e: self.move_point(e, 1))
@@ -332,12 +809,88 @@ class PointCreator:
         ttk.Button(controls_frame, text="Save data", command=self.save_dataset_as, width=15).pack(pady=5, fill="x")
         
         # Playback and export buttons
-        ttk.Button(controls_frame, text="Show episode", command=self.show_episode, width=15).pack(pady=5, fill="x")
         ttk.Button(controls_frame, text="Create MP4", command=self.open_mp4_dialog, width=15).pack(pady=5, fill="x")
         ttk.Button(controls_frame, text="Load Capsule", command=self.load_capsule_dialog, width=15).pack(pady=5, fill="x")
         
         # Utility buttons
         ttk.Button(controls_frame, text="Fullscreen", command=self.toggle_fullscreen, width=15).pack(pady=5, fill="x")
+    
+    def open_anchor_menu(self):
+        """Open the anchor management window"""
+        AnchorMenu(self.root, self)
+    
+    def toggle_episode_playback(self):
+        """Toggle episode playback with speed 10% per second"""
+        if self.is_episode_playing:
+            # Stop playback
+            self.is_episode_playing = False
+            if self.episode_animation_id:
+                self.root.after_cancel(self.episode_animation_id)
+                self.episode_animation_id = None
+            self.play_episode_button.config(text="▶ Play Episode")
+            self.moment_scale.config(state="normal")
+        else:
+            # Start playback
+            # Get data for selected episode
+            if self.loaded_capsule:
+                season_index = self.seasons_list.index(self.season_var.get()) + 1
+                if (self.loaded_capsule["season"] == season_index and 
+                    self.loaded_capsule["episode"] == int(self.episode_var.get())):
+                    self.episode_data = {
+                        "moments": self.loaded_capsule["moments"],
+                        "quartets": self.loaded_capsule["quartets"]
+                    }
+                else:
+                    messagebox.showwarning("Warning", "Loaded capsule doesn't match selected season/episode!")
+                    return
+            else:
+                self.episode_data = self.get_episode_data()
+            
+            if not self.episode_data["moments"]:
+                messagebox.showwarning("Warning", "No data for selected episode!")
+                return
+            
+            self.is_episode_playing = True
+            self.play_episode_button.config(text="⏹ Stop Episode")
+            self.moment_scale.config(state="disabled")
+            self.play_episode_animation()
+    
+    def play_episode_animation(self):
+        """Play episode animation at 10% per second"""
+        if not self.is_episode_playing:
+            return
+        
+        # Get current moment
+        current_moment = self.moment_var.get()
+        
+        # Increase by 10% per second (10% per 1000ms, so 1% per 100ms)
+        # Update every 50ms for smooth animation
+        increment_per_frame = 0.5  # 0.5% per 50ms = 10% per second
+        
+        new_moment = current_moment + increment_per_frame
+        
+        if new_moment >= 100.0:
+            # Reached the end
+            new_moment = 100.0
+            self.moment_var.set(new_moment)
+            self.moment_label.config(text=f"{new_moment:.1f}%")
+            self.update_timestamp_from_scale(new_moment)
+            # IMPORTANT: Update points when reaching the end
+            self.update_points_from_scale()
+            self.is_episode_playing = False
+            self.play_episode_button.config(text="▶ Play Episode")
+            self.moment_scale.config(state="normal")
+            return
+        
+        # Update moment
+        self.moment_var.set(new_moment)
+        self.moment_label.config(text=f"{new_moment:.1f}%")
+        self.update_timestamp_from_scale(new_moment)
+        # IMPORTANT: Update points on each frame
+        self.update_points_from_scale()
+        
+        # Schedule next update
+        self.episode_animation_id = self.root.after(50, self.play_episode_animation)
     
     def add_current_data(self):
         """Add current data to dataset"""
@@ -356,14 +909,17 @@ class PointCreator:
         season_norm = season_index / 10
         
         # Normalize input data
-        episode_norm = float(self.episode_var.get()) / 1000
-        moment_norm = self.moment_var.get() / 100
-        
-        # Add data to structure
-        self.data["X"].append([season_norm, episode_norm, moment_norm])
-        self.data["Y"].append([x1_norm, y1_norm, x2_norm, y2_norm])
-        
-        messagebox.showinfo("Success", "Data successfully added to dataset!")
+        try:
+            episode_norm = float(self.episode_var.get()) / 1000
+            moment_norm = self.moment_var.get() / 100
+            
+            # Add data to structure
+            self.data["X"].append([season_norm, episode_norm, moment_norm])
+            self.data["Y"].append([x1_norm, y1_norm, x2_norm, y2_norm])
+            
+            messagebox.showinfo("Success", "Data successfully added to dataset!")
+        except ValueError:
+            messagebox.showerror("Error", "Invalid episode number!")
     
     def load_dataset(self):
         """Load dataset from file"""
@@ -420,12 +976,11 @@ class PointCreator:
         
         # Automatically update point positions when slider moves
         self.update_points_from_scale()
-
+    
     def update_points_from_scale(self):
         """Update point positions when scale moves"""
-        # If playback is active, don't update points manually
-        if self.is_playing:
-            return
+        # If episode playback is active, still update points (we want them to move)
+        # Remove the check for is_episode_playing to allow updates during playback
             
         # Get data for selected episode
         if self.loaded_capsule:
@@ -456,6 +1011,8 @@ class PointCreator:
             self.set_point_position(2, target_points[2], target_points[3])
             # Update current points
             self.current_points = target_points.copy()
+            # Update nearest anchor display
+            self.update_nearest_anchor_display()
     
     def update_timecode_from_entries(self):
         """Update scale when timecode entries change"""
@@ -499,7 +1056,7 @@ class PointCreator:
         
         # Convert coordinates to [0,1]
         x_norm = x / 300
-        y_norm = 1 - (y / 300)  # Invert Y since canvas origin is at top
+        y_norm = 1 - (y / 300)
         
         # Update current positions
         if point_num == 1:
@@ -512,6 +1069,9 @@ class PointCreator:
             self.current_points[3] = y_norm
             self.x2_var.set(f"{x_norm:.3f}")
             self.y2_var.set(f"{y_norm:.3f}")
+        
+        # Update nearest anchor display
+        self.update_nearest_anchor_display()
     
     def get_episode_data(self):
         """Get data only for selected season and episode (old format)"""
@@ -528,8 +1088,8 @@ class PointCreator:
             
             # Check if record matches selected season and episode
             if abs(x_data[0] - season_norm) < 0.001 and abs(x_data[1] - episode_norm) < 0.001:
-                moments.append(x_data[2] * 100)  # Convert to percentages (0-100)
-                quartets.append(y_data)          # Point coordinates
+                moments.append(x_data[2] * 100)
+                quartets.append(y_data)
         
         # Sort data by time moment
         if moments:
@@ -540,42 +1100,6 @@ class PointCreator:
             quartets = list(quartets)
         
         return {"moments": moments, "quartets": quartets}
-    
-    def show_episode(self):
-        """Show full episode with animation"""
-        if self.is_playing:
-            self.is_playing = False
-            self.moment_scale.config(state="normal")
-            self.moment_label.config(foreground="#ecf0f1")
-        else:
-            # Get data for selected episode
-            if self.loaded_capsule:
-                # Use data from loaded capsule
-                season_index = self.seasons_list.index(self.season_var.get()) + 1
-                if (self.loaded_capsule["season"] == season_index and 
-                    self.loaded_capsule["episode"] == int(self.episode_var.get())):
-                    self.episode_data = {
-                        "moments": self.loaded_capsule["moments"],
-                        "quartets": self.loaded_capsule["quartets"]
-                    }
-                else:
-                    messagebox.showwarning("Warning", "Loaded capsule doesn't match selected season/episode!")
-                    return
-            else:
-                # Use data from IDS.json (old format)
-                self.episode_data = self.get_episode_data()
-            
-            if not self.episode_data["moments"]:
-                messagebox.showwarning("Warning", "No data for selected episode!")
-                return
-            
-            # Remember start moment
-            self.start_moment = self.moment_var.get()
-            self.is_playing = True
-            self.animation_start_time = time.time()
-            self.moment_scale.config(state="disabled")
-            self.moment_label.config(foreground="red")
-            self.play_animation()
     
     def get_interpolated_target(self, current_time):
         """Get target position through interpolation between frames"""
@@ -607,78 +1131,11 @@ class PointCreator:
         
         # Interpolate each coordinate
         interpolated_points = []
-        for i in range(4):  # x1, y1, x2, y2
+        for i in range(4):
             interpolated_value = prev_points[i] + (next_points[i] - prev_points[i]) * t
             interpolated_points.append(interpolated_value)
         
         return interpolated_points
-    
-    def play_animation(self):
-        """Play animation of episode"""
-        if not self.is_playing:
-            return
-            
-        # Calculate elapsed time since playback started
-        elapsed_time = time.time() - self.animation_start_time
-        
-        # Calculate current time considering start moment (in percentage)
-        # Increase speed by 4 times
-        current_time = self.start_moment + (elapsed_time * 0.8333 * 4)  # 0.8333% per second * 4
-        
-        # Limit current time to 100%
-        if current_time > 100.0:
-            current_time = 100.0
-            self.is_playing = False
-            self.moment_scale.config(state="normal")
-            self.moment_label.config(foreground="#ecf0f1")
-        
-        # Set progress on slider
-        self.moment_var.set(current_time)
-        self.moment_label.config(text=f"{current_time:.1f}%")
-        
-        # Update timecode
-        try:
-            hours = int(self.length_hours_var.get())
-            minutes = int(self.length_minutes_var.get())
-            seconds = int(self.length_seconds_var.get())
-            total_seconds = hours * 3600 + minutes * 60 + seconds
-            
-            if total_seconds > 0:
-                current_seconds = (current_time / 100.0) * total_seconds
-                hours = int(current_seconds // 3600)
-                minutes = int((current_seconds % 3600) // 60)
-                seconds = int(current_seconds % 60)
-                
-                self.hours_var.set(f"{hours:02d}")
-                self.minutes_var.set(f"{minutes:02d}")
-                self.seconds_var.set(f"{seconds:02d}")
-        except ValueError:
-            pass
-        
-        # Get target position through interpolation
-        target_points = self.get_interpolated_target(current_time)
-        
-        if target_points:
-            # Smoothly move points to target position
-            self.smooth_move_points(target_points)
-        
-        # Continue animation if not reached end
-        if self.is_playing:
-            self.root.after(50, self.play_animation)  # Update every 50 ms
-    
-    def smooth_move_points(self, target_points):
-        """Smoothly move points to target position"""
-        # Smoothness coefficient (higher = faster movement)
-        smoothness = 0.2
-        
-        # Smoothly move each point
-        for i in range(4):
-            # Calculate new position as weighted average
-            self.current_points[i] = self.current_points[i] * (1 - smoothness) + target_points[i] * smoothness
-        
-        # Set new positions
-        self.set_point_position(1, self.current_points[0], self.current_points[1])
-        self.set_point_position(2, self.current_points[2], self.current_points[3])
     
     def set_point_position(self, point_num, x_norm, y_norm):
         """Set point position from normalized coordinates"""
@@ -687,7 +1144,7 @@ class PointCreator:
         
         # Convert normalized coordinates to pixels
         x = x_norm * 300
-        y = (1 - y_norm) * 300  # Invert Y
+        y = (1 - y_norm) * 300
         
         # Set point position
         canvas.coords(point, x-5, y-5, x+5, y+5)
@@ -793,25 +1250,24 @@ class PointCreator:
         ttk.Button(btn_frame, text="Create", 
                   command=lambda: self.start_mp4_creation(mp4_dialog)).pack(side="left", padx=10)
         ttk.Button(btn_frame, text="Cancel", command=mp4_dialog.destroy).pack(side="right", padx=10)
-        
+    
     def browse_save_path(self):
         """Select path for saving video"""
-        # Create temporary window to hold focus
         temp = tk.Toplevel(self.root)
-        temp.withdraw()  # Hide temporary window
+        temp.withdraw()
         
         file_path = filedialog.asksaveasfilename(
             defaultextension=".mp4",
             filetypes=[("MP4 files", "*.mp4"), ("All files", "*.*")],
             title="Save video as",
-            parent=temp  # Specify parent window
+            parent=temp
         )
     
-        temp.destroy()  # Destroy temporary window
+        temp.destroy()
     
         if file_path:
             self.video_path_var.set(file_path)
-        
+    
     def start_mp4_creation(self, dialog):
         """Start MP4 creation in separate thread"""
         try:
@@ -885,7 +1341,7 @@ class PointCreator:
             progress_bar.pack(pady=10, padx=20, fill="x")
             
             # Start from center positions
-            current_video_points = [0.5, 0.5, 0.5, 0.5]  # x1, y1, x2, y2
+            current_video_points = [0.5, 0.5, 0.5, 0.5]
             
             # Generate frames
             frames = []
@@ -898,7 +1354,7 @@ class PointCreator:
                 
                 if target_points:
                     # Smoothly move points to target position
-                    smoothness = 0.1  # Lower coefficient for smoother video
+                    smoothness = 0.1
                     for i in range(4):
                         current_video_points[i] = current_video_points[i] * (1 - smoothness) + target_points[i] * smoothness
                     
@@ -928,7 +1384,7 @@ class PointCreator:
     def generate_frame(self, points):
         """Generate frame with points on background"""
         # Create image 600x300 (combine two canvases)
-        frame = np.ones((300, 600, 3), dtype=np.uint8) * 255  # White background
+        frame = np.ones((300, 600, 3), dtype=np.uint8) * 255
         
         try:
             # Load background images
@@ -949,13 +1405,13 @@ class PointCreator:
         # Draw points
         # Point 1 (red)
         x1 = int(points[0] * 300)
-        y1 = int((1 - points[1]) * 300)  # Invert Y
-        cv2.circle(frame, (x1, y1), 5, (0, 0, 255), -1)  # Red
+        y1 = int((1 - points[1]) * 300)
+        cv2.circle(frame, (x1, y1), 5, (0, 0, 255), -1)
         
         # Point 2 (blue)
-        x2 = int(points[2] * 300) + 300  # Shift for right canvas
-        y2 = int((1 - points[3]) * 300)  # Invert Y
-        cv2.circle(frame, (x2, y2), 5, (255, 0, 0), -1)  # Blue
+        x2 = int(points[2] * 300) + 300
+        y2 = int((1 - points[3]) * 300)
+        cv2.circle(frame, (x2, y2), 5, (255, 0, 0), -1)
         
         # Convert BGR to RGB for moviepy
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
