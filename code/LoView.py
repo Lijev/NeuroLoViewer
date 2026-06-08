@@ -61,14 +61,15 @@ class Anchor:
 
 class AnchorMenu:
     """Окно управления якорями"""
-    def __init__(self, parent, anchors_list, save_callback, update_display_callback):
+    def __init__(self, parent, anchors_list, save_callback, update_display_callback, use_anchor_callback):
         self.parent = parent
         self.anchors_list = anchors_list
         self.save_callback = save_callback
         self.update_display_callback = update_display_callback
+        self.use_anchor_callback = use_anchor_callback
         self.window = tk.Toplevel(parent)
         self.window.title("Anchor Manager")
-        self.window.geometry("650x550")
+        self.window.geometry("650x500")
         self.window.configure(bg='#2c3e50')
         
         # Set icon
@@ -102,11 +103,12 @@ class AnchorMenu:
         title_label = ttk.Label(self.window, text="ANCHOR MANAGER", font=('Arial', 14, 'bold'))
         title_label.pack(pady=10)
         
-        # Import/Export buttons frame
+        # Import/Export/Clear buttons frame
         io_frame = ttk.Frame(self.window)
         io_frame.pack(pady=5)
         
         ttk.Button(io_frame, text="↓ AnchorBook", command=self.import_anchors, width=18).pack(side="left", padx=5)
+        ttk.Button(io_frame, text="X Clear All", command=self.clear_all_anchors, width=12).pack(side="left", padx=5)
         ttk.Button(io_frame, text="↑ AnchorBook", command=self.export_anchors, width=18).pack(side="left", padx=5)
         
         # List frame
@@ -138,21 +140,22 @@ class AnchorMenu:
         self.tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
+        # Bind double-click to use anchor
+        self.tree.bind('<Double-Button-1>', self.on_double_click)
+        
         # Bind selection event
         self.tree.bind('<<TreeviewSelect>>', self.on_anchor_selected)
         
-        # Buttons frame
+        # Buttons frame - only Clone, Rename, Delete, Move
         buttons_frame = ttk.Frame(self.window)
         buttons_frame.pack(pady=15)
         
-        btn_style = {"width": 12, "padding": 5}
+        btn_style = {"width": 10, "padding": 5}
         
         ttk.Button(buttons_frame, text="Clone", command=self.clone_anchor, **btn_style).grid(row=0, column=0, padx=5, pady=5)
         ttk.Button(buttons_frame, text="Rename", command=self.rename_anchor, **btn_style).grid(row=0, column=1, padx=5, pady=5)
         ttk.Button(buttons_frame, text="Delete", command=self.delete_anchor, **btn_style).grid(row=0, column=2, padx=5, pady=5)
-        ttk.Button(buttons_frame, text="Move", command=self.move_anchor, **btn_style).grid(row=1, column=0, padx=5, pady=5)
-        ttk.Button(buttons_frame, text="Use", command=self.use_anchor, **btn_style).grid(row=1, column=1, padx=5, pady=5)
-        ttk.Button(buttons_frame, text="Close", command=self.on_close, **btn_style).grid(row=1, column=2, padx=5, pady=5)
+        ttk.Button(buttons_frame, text="Move", command=self.move_anchor, **btn_style).grid(row=0, column=3, padx=5, pady=5)
         
         self.selected_anchor = None
     
@@ -181,6 +184,25 @@ class AnchorMenu:
                 if anchor.name == anchor_name:
                     self.selected_anchor = anchor
                     break
+    
+    def on_double_click(self, event):
+        """Обработка двойного клика - использовать якорь"""
+        if self.selected_anchor:
+            self.use_anchor()
+    
+    def clear_all_anchors(self):
+        """Очистить все якоря"""
+        if not self.get_anchors():
+            messagebox.showwarning("Warning", "No anchors to clear!", parent=self.window)
+            return
+        
+        if messagebox.askyesno("Confirm Clear", "Are you sure you want to delete ALL anchors? This cannot be undone!", parent=self.window):
+            self.anchors_list.clear()
+            self.save_anchors()
+            self.refresh_anchor_list()
+            if self.update_display_callback:
+                self.update_display_callback()
+            messagebox.showinfo("Success", "All anchors cleared!", parent=self.window)
     
     def import_anchors(self):
         """Import anchors from AnchorBook file"""
@@ -371,18 +393,8 @@ class AnchorMenu:
             messagebox.showwarning("Warning", "Please select an anchor first!", parent=self.window)
             return
         
-        update_canvas_points(
-            self.selected_anchor.coordinates[0],
-            self.selected_anchor.coordinates[1],
-            self.selected_anchor.coordinates[2],
-            self.selected_anchor.coordinates[3]
-        )
-        
-        # Update current_points globally
-        current_points[0] = self.selected_anchor.coordinates[0]
-        current_points[1] = self.selected_anchor.coordinates[1]
-        current_points[2] = self.selected_anchor.coordinates[2]
-        current_points[3] = self.selected_anchor.coordinates[3]
+        if self.use_anchor_callback:
+            self.use_anchor_callback(self.selected_anchor.coordinates)
         
         if self.update_display_callback:
             self.update_display_callback()
@@ -981,11 +993,6 @@ def toggle_fullscreen():
     root.attributes("-fullscreen", is_fullscreen)
 
 
-def on_mousewheel(event):
-    """Handle mousewheel scrolling"""
-    canvas.yview_scroll(int(-1 * (event.delta / 120) * 10), "units")
-
-
 def save_config():
     """Save configuration to file"""
     with open(CONFIG_FILE, 'w') as configfile:
@@ -1045,23 +1052,13 @@ def save_anchors_to_config(anchors):
     save_config()
 
 
-def add_anchor_from_current_points():
-    """Create a new anchor from current point positions"""
-    name = simpledialog.askstring("Add Anchor", "Enter name for this anchor:", parent=root)
-    if not name:
-        return
-    
-    if any(anchor.name == name for anchor in anchors):
-        if not messagebox.askyesno("Warning", f"Anchor '{name}' already exists. Overwrite?"):
-            return
-        anchors[:] = [a for a in anchors if a.name != name]
-    
-    new_anchor = Anchor(name, current_points)
-    anchors.append(new_anchor)
-    save_anchors_to_config(anchors)
-    
-    messagebox.showinfo("Success", f"Anchor '{name}' added successfully!")
-    update_nearest_anchor_display()
+def use_anchor_callback(coordinates):
+    """Callback to use anchor coordinates"""
+    update_canvas_points(coordinates[0], coordinates[1], coordinates[2], coordinates[3])
+    current_points[0] = coordinates[0]
+    current_points[1] = coordinates[1]
+    current_points[2] = coordinates[2]
+    current_points[3] = coordinates[3]
 
 
 def open_anchor_menu():
@@ -1074,7 +1071,7 @@ def open_anchor_menu():
     def update_display_callback():
         update_nearest_anchor_display()
     
-    AnchorMenu(root, anchors, save_callback, update_display_callback)
+    AnchorMenu(root, anchors, save_callback, update_display_callback, use_anchor_callback)
 
 
 def calculate_distance(points1, points2):
@@ -1369,11 +1366,10 @@ ttk.Label(plot_coord_frame, text="Y:").pack(side=tk.LEFT)
 y2_var = tk.StringVar(value="0.500")
 ttk.Label(plot_coord_frame, textvariable=y2_var, width=6).pack(side=tk.LEFT)
 
-# Anchor buttons frame (between canvases and prediction buttons)
+# Anchor buttons frame - only Anchor Menu button (Add Anchor removed)
 frame_anchor_buttons = ttk.Frame(center_frame)
 frame_anchor_buttons.pack(pady=10, fill=tk.X, padx=10)
 
-ttk.Button(frame_anchor_buttons, text="Add Anchor", command=add_anchor_from_current_points, width=15).pack(side=tk.LEFT, padx=5)
 ttk.Button(frame_anchor_buttons, text="Anchor Menu", command=open_anchor_menu, width=15).pack(side=tk.LEFT, padx=5)
 
 # Nearest anchor display label

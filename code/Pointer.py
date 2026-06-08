@@ -74,8 +74,9 @@ class AnchorMenu:
         io_frame = ttk.Frame(self.window)
         io_frame.pack(pady=5)
         
-        # Changed to ↓ and ↑ symbols
+        # Кнопки: ↓AnchorBook, ❌ Clear All, ↑AnchorBook
         ttk.Button(io_frame, text="↓AnchorBook", command=self.import_anchors, width=12).pack(side="left", padx=5)
+        ttk.Button(io_frame, text="❌ Clear All", command=self.clear_all_anchors, width=12).pack(side="left", padx=5)
         ttk.Button(io_frame, text="↑AnchorBook", command=self.export_anchors, width=12).pack(side="left", padx=5)
         
         # List frame
@@ -125,6 +126,23 @@ class AnchorMenu:
         ttk.Button(buttons_frame, text="Close", command=self.on_close, **btn_style).grid(row=1, column=2, padx=5, pady=5)
         
         self.selected_anchor = None
+    
+    def clear_all_anchors(self):
+        """Удалить все якоря"""
+        if not self.point_creator.anchors:
+            messagebox.showinfo("Info", "No anchors to clear!", parent=self.window)
+            return
+        
+        # Confirm deletion
+        if messagebox.askyesno("Confirm Clear All", 
+                               f"Are you sure you want to delete ALL {len(self.point_creator.anchors)} anchors?\n\nThis action cannot be undone!",
+                               parent=self.window):
+            self.point_creator.anchors.clear()
+            self.point_creator.save_anchors_to_config()
+            self.selected_anchor = None
+            self.refresh_anchor_list()
+            self.point_creator.update_nearest_anchor_display()
+            messagebox.showinfo("Success", "All anchors have been cleared!", parent=self.window)
     
     def refresh_anchor_list(self):
         """Обновить список якорей"""
@@ -278,6 +296,7 @@ class AnchorMenu:
             self.point_creator.save_anchors_to_config()
             self.selected_anchor = None
             self.refresh_anchor_list()
+            self.point_creator.update_nearest_anchor_display()
             messagebox.showinfo("Success", "Anchor deleted successfully!", parent=self.window)
     
     def move_anchor(self):
