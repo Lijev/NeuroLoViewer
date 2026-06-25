@@ -1,0 +1,147 @@
+{
+    "version": "1.0",
+    "created": 1782403433.8850718,
+    "anchor_count": 14,
+    "anchors": [
+        {
+            "name": "Idle",
+            "coordinates": [
+                0.5,
+                0.5,
+                0.5,
+                0.5
+            ],
+            "created_at": 1782396410.9601166
+        },
+        {
+            "name": "Flashforward",
+            "coordinates": [
+                0.85,
+                0.5033333333333334,
+                0.12666666666666668,
+                0.4833333333333333
+            ],
+            "created_at": 1782396466.3441114
+        },
+        {
+            "name": "Opening",
+            "coordinates": [
+                0.51,
+                0.8533333333333333,
+                0.5,
+                0.5
+            ],
+            "created_at": 1782396571.7575011
+        },
+        {
+            "name": "Intro",
+            "coordinates": [
+                0.5166666666666667,
+                0.6933333333333334,
+                0.88,
+                0.5033333333333334
+            ],
+            "created_at": 1782396605.601637
+        },
+        {
+            "name": "Happy",
+            "coordinates": [
+                0.5,
+                1.0,
+                0.5,
+                0.5
+            ],
+            "created_at": 1782397804.3769665
+        },
+        {
+            "name": "Angry",
+            "coordinates": [
+                0.0,
+                0.0,
+                0.5,
+                0.5
+            ],
+            "created_at": 1782397867.9223533
+        },
+        {
+            "name": "Fear",
+            "coordinates": [
+                1.0,
+                0.0,
+                0.5,
+                0.5
+            ],
+            "created_at": 1782397873.8137999
+        },
+        {
+            "name": "Sad",
+            "coordinates": [
+                0.5,
+                0.0,
+                0.5,
+                0.5
+            ],
+            "created_at": 1782397887.9435596
+        },
+        {
+            "name": "+Global Lore",
+            "coordinates": [
+                0.5,
+                0.5,
+                0.0,
+                1.0
+            ],
+            "created_at": 1782397983.3944588
+        },
+        {
+            "name": "+Character Lore",
+            "coordinates": [
+                0.5,
+                0.5,
+                0.0,
+                0.0
+            ],
+            "created_at": 1782398012.423479
+        },
+        {
+            "name": "WOW!!!",
+            "coordinates": [
+                1.0,
+                0.5,
+                0.5,
+                0.5
+            ],
+            "created_at": 1782398920.2298458
+        },
+        {
+            "name": "What???",
+            "coordinates": [
+                0.0,
+                0.5,
+                0.5,
+                0.5
+            ],
+            "created_at": 1782398936.6323295
+        },
+        {
+            "name": "Boring and Nothing",
+            "coordinates": [
+                0.5166666666666667,
+                0.32333333333333336,
+                0.5,
+                0.5
+            ],
+            "created_at": 1782400365.6329682
+        },
+        {
+            "name": "TO BE CONTINUED...",
+            "coordinates": [
+                0.78,
+                0.5,
+                0.06,
+                0.4833333333333333
+            ],
+            "created_at": 1782400399.780232
+        }
+    ]
+}
