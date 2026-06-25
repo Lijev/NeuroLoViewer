@@ -18,6 +18,8 @@ import cv2
 
 # Global variables
 X_train, X_test, y_train, y_test = None, None, None, None
+X_train_data, X_test_data, y_train_data, y_test_data = None, None, None, None
+test_data_loaded = False
 current_model = None
 training_history = None
 test_loss = None
@@ -402,6 +404,382 @@ class AnchorMenu:
         messagebox.showinfo("Success", f"Points moved to anchor '{self.selected_anchor.name}'!", parent=self.window)
 
 
+class GraphWindow:
+    """Окно для отображения графика Match vs Moment"""
+    def __init__(self, parent, point_creator):
+        self.parent = parent
+        self.point_creator = point_creator
+        self.fig = None
+        self.canvas = None
+        self.anchor_vars = {}
+        self.prediction_data = None
+        self.moments = None
+        self.quartets = None
+        
+        self.window = tk.Toplevel(parent)
+        self.window.title("Match Graph")
+        self.window.geometry("1100x750")
+        self.window.configure(bg='#2c3e50')
+        
+        try:
+            icon_path = resource_path("lo.ico")
+            if os.path.exists(icon_path):
+                self.window.iconbitmap(icon_path)
+        except:
+            pass
+        
+        self.window.transient(parent)
+        self.create_widgets()
+        
+        # Запускаем генерацию предсказаний
+        self.start_prediction_generation()
+    
+    def create_widgets(self):
+        # Основной фрейм
+        main_frame = ttk.Frame(self.window)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Левая панель - список якорей
+        left_panel = ttk.Frame(main_frame, width=200)
+        left_panel.pack(side="left", fill="y", padx=(0, 10))
+        
+        # Правая панель - график
+        right_panel = ttk.Frame(main_frame)
+        right_panel.pack(side="right", fill="both", expand=True)
+        
+        # ========== ЛЕВАЯ ПАНЕЛЬ ==========
+        title_label = ttk.Label(left_panel, text="ANCHORS", font=('Arial', 12, 'bold'))
+        title_label.pack(pady=5)
+        
+        # Прогрессбар
+        self.progress_frame = ttk.Frame(left_panel)
+        self.progress_frame.pack(fill="x", pady=5)
+        
+        self.progress_label = ttk.Label(self.progress_frame, text="Generating predictions...", font=('Arial', 9))
+        self.progress_label.pack()
+        
+        self.progress_bar = ttk.Progressbar(self.progress_frame, orient=tk.HORIZONTAL, length=180, mode='determinate')
+        self.progress_bar.pack(pady=5)
+        self.progress_bar['value'] = 0
+        
+        # Фрейм со списком якорей
+        anchors_frame = ttk.LabelFrame(left_panel, text="Show/Hide", padding=5)
+        anchors_frame.pack(fill="both", expand=True, pady=5)
+        
+        # Canvas для скролла
+        canvas_container = tk.Canvas(anchors_frame, bg='#34495e', highlightthickness=0)
+        scrollbar = ttk.Scrollbar(anchors_frame, orient="vertical", command=canvas_container.yview)
+        scrollable_frame = ttk.Frame(canvas_container)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas_container.configure(scrollregion=canvas_container.bbox("all"))
+        )
+        
+        canvas_container.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas_container.configure(yscrollcommand=scrollbar.set)
+        
+        canvas_container.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Чекбоксы для якорей
+        self.anchor_checkboxes = []
+        for anchor in self.point_creator.anchors:
+            var = tk.BooleanVar(value=True)
+            self.anchor_vars[anchor.name] = var
+            cb = ttk.Checkbutton(scrollable_frame, text=anchor.name, variable=var,
+                                command=self.update_graph)
+            cb.pack(anchor="w", pady=2, padx=5)
+            self.anchor_checkboxes.append(cb)
+        
+        # Кнопки управления - ВСЕ КНОПКИ СЛЕВА ВНИЗУ
+        btn_frame = ttk.Frame(left_panel)
+        btn_frame.pack(fill="x", pady=10)
+        
+        ttk.Button(btn_frame, text="Select All", command=self.select_all_anchors, width=10).pack(side="left", padx=2)
+        ttk.Button(btn_frame, text="Deselect All", command=self.deselect_all_anchors, width=10).pack(side="left", padx=2)
+        
+        # Разделитель
+        ttk.Separator(btn_frame, orient='horizontal').pack(fill="x", pady=5)
+        
+        ttk.Button(btn_frame, text="💾 Save PNG", command=self.export_graph, width=10).pack(side="left", padx=2)
+        ttk.Button(btn_frame, text="Close", command=self.window.destroy, width=10).pack(side="left", padx=2)
+        
+        # ========== ПРАВАЯ ПАНЕЛЬ - ГРАФИК ==========
+        self.graph_frame = ttk.Frame(right_panel)
+        self.graph_frame.pack(fill="both", expand=True)
+        
+        # Заглушка
+        self.placeholder_label = ttk.Label(self.graph_frame, text="Generating predictions...\nPlease wait", 
+                                          font=('Arial', 16), anchor="center")
+        self.placeholder_label.pack(expand=True)
+    
+    def start_prediction_generation(self):
+        """Запустить генерацию предсказаний в отдельном потоке"""
+        threading.Thread(target=self.generate_predictions, daemon=True).start()
+    
+    def generate_predictions(self):
+        """Сгенерировать 10000 точек предсказания (каждые 0.01%)"""
+        global current_model
+        if current_model is None:
+            self.window.after(0, lambda: messagebox.showerror("Error", "Model not loaded!"))
+            self.window.after(0, self.window.destroy)
+            return
+        
+        try:
+            if season_names:
+                season = season_names.index(combo_season.get()) + 1
+            else:
+                season = int(combo_season.get().split()[-1])
+                
+            episode_str = entry_episode.get()
+            episode = int(episode_str)
+            
+            season_norm = season / 10.0
+            episode_norm = episode / 1000.0
+            
+            total_points = 10000  # 0.01% шаг
+            moments = []
+            quartets = []
+            
+            for i in range(total_points):
+                moment = (i / total_points) * 100.0
+                moment_norm = moment / 100.0
+                
+                input_data = np.array([[season_norm, episode_norm, moment_norm]])
+                predictions = current_model.predict(input_data, verbose=0)[0]
+                
+                moments.append(float(moment))
+                quartets.append([
+                    float(predictions[0]),
+                    float(predictions[1]),
+                    float(predictions[2]),
+                    float(predictions[3])
+                ])
+                
+                # Обновляем прогресс
+                if i % 100 == 0 or i == total_points - 1:
+                    progress = (i + 1) / total_points * 100
+                    self.window.after(0, lambda p=progress: self.update_progress(p))
+            
+            self.prediction_data = {"moments": moments, "quartets": quartets}
+            
+            # Обновляем UI
+            self.window.after(0, self.prediction_complete)
+            
+        except Exception as e:
+            self.window.after(0, lambda: messagebox.showerror("Error", f"Error generating predictions: {e}"))
+            self.window.after(0, self.window.destroy)
+    
+    def update_progress(self, progress):
+        """Обновить прогрессбар"""
+        self.progress_bar['value'] = progress
+        self.progress_label.config(text=f"Generating predictions... {progress:.1f}%")
+        self.window.update_idletasks()
+    
+    def prediction_complete(self):
+        """Обработка завершения генерации предсказаний"""
+        self.progress_label.config(text="Predictions complete!")
+        self.progress_bar['value'] = 100
+        
+        # Убираем прогрессбар через секунду
+        self.window.after(1000, lambda: self.progress_frame.pack_forget())
+        
+        # Строим график
+        self.plot_graph()
+    
+    def select_all_anchors(self):
+        for var in self.anchor_vars.values():
+            var.set(True)
+        self.update_graph()
+    
+    def deselect_all_anchors(self):
+        for var in self.anchor_vars.values():
+            var.set(False)
+        self.update_graph()
+    
+    def get_hsv_colors(self, n):
+        """Получить n цветов, равноудаленных по тону HSV"""
+        colors = []
+        for i in range(n):
+            hue = i / n
+            r, g, b = self.hsv_to_rgb(hue, 0.9, 0.9)
+            colors.append((r/255, g/255, b/255))
+        return colors
+    
+    def hsv_to_rgb(self, h, s, v):
+        """Конвертировать HSV в RGB"""
+        if s == 0.0:
+            return (v*255, v*255, v*255)
+        i = int(h * 6.0)
+        f = (h * 6.0) - i
+        p = v * (1.0 - s)
+        q = v * (1.0 - s * f)
+        t = v * (1.0 - s * (1.0 - f))
+        i = i % 6
+        if i == 0:
+            return (v*255, t*255, p*255)
+        elif i == 1:
+            return (q*255, v*255, p*255)
+        elif i == 2:
+            return (p*255, v*255, t*255)
+        elif i == 3:
+            return (p*255, q*255, v*255)
+        elif i == 4:
+            return (t*255, p*255, v*255)
+        else:
+            return (v*255, p*255, q*255)
+    
+    def update_graph(self):
+        """Обновить график при изменении чекбоксов"""
+        if self.fig:
+            plt.close(self.fig)
+        self.plot_graph()
+    
+    def plot_graph(self):
+        """Построить график"""
+        if not self.prediction_data:
+            return
+        
+        moments = self.prediction_data["moments"]
+        quartets = self.prediction_data["quartets"]
+        anchors = self.point_creator.anchors
+        
+        if not anchors:
+            self.placeholder_label.config(text="No anchors available")
+            return
+        
+        # Убираем заглушку
+        self.placeholder_label.pack_forget()
+        
+        # Создаем фигуру
+        self.fig, ax = plt.subplots(figsize=(10, 7), dpi=100)
+        self.fig.patch.set_facecolor('#2c3e50')
+        ax.set_facecolor('#34495e')
+        
+        # Получаем только активные якоря
+        active_anchors = [a for a in anchors if self.anchor_vars.get(a.name, tk.BooleanVar(value=True)).get()]
+        
+        if not active_anchors:
+            ax.text(0.5, 0.5, "No anchors selected", 
+                   ha='center', va='center', color='white', fontsize=16)
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.set_xticks([])
+            ax.set_yticks([])
+        else:
+            colors = self.get_hsv_colors(len(active_anchors))
+            
+            # Для каждого активного якоря вычисляем Match
+            for idx, anchor in enumerate(active_anchors):
+                match_values = []
+                anchor_pos = anchor.coordinates
+                
+                for quartet in quartets:
+                    distance = calculate_distance(quartet, anchor_pos)
+                    max_distance = calculate_distance([0,0,0,0], [1,1,1,1])
+                    match = (1 - (distance / max_distance)) * 100
+                    match_values.append(match)
+                
+                color = colors[idx]
+                ax.plot(moments, match_values, 
+                       label=anchor.name, 
+                       color=color, 
+                       linewidth=2.0,
+                       alpha=0.9)
+            
+            # Настройка графика
+            ax.set_xlabel('Moment (%)', fontsize=14, color='white', fontweight='bold')
+            ax.set_ylabel('Match (%)', fontsize=14, color='white', fontweight='bold')
+            
+            season_name = get_season_name(combo_season.get())
+            episode_num = entry_episode.get()
+            ax.set_title(f'{season_name} - Episode {episode_num}', 
+                        fontsize=16, color='white', pad=20, fontweight='bold')
+            
+            ax.grid(True, alpha=0.3, color='gray', linestyle='--')
+            ax.set_xlim(0, 100)
+            ax.set_ylim(0, 100)
+            
+            # Легенда
+            ax.legend(loc='best', facecolor='#2c3e50', edgecolor='white', 
+                     labelcolor='white', fontsize=11)
+            
+            # Цвета осей и тиков
+            ax.tick_params(colors='white', labelsize=11)
+            for spine in ax.spines.values():
+                spine.set_color('white')
+                spine.set_linewidth(1.5)
+        
+        # Очищаем предыдущий график
+        for widget in self.graph_frame.winfo_children():
+            widget.destroy()
+        
+        # Встраиваем новый график
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.graph_frame)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+    
+    def export_graph(self):
+        """Экспортировать график в PNG"""
+        if not self.fig:
+            messagebox.showerror("Error", "No graph to export!")
+            return
+        
+        season_name = get_season_name(combo_season.get())
+        episode_num = entry_episode.get()
+        default_name = f"Match_Graph_{season_name}_Ep{episode_num}.png"
+        
+        filepath = filedialog.asksaveasfilename(
+            title="Export Graph",
+            defaultextension=".png",
+            initialfile=default_name,
+            filetypes=[("PNG files", "*.png"), ("All files", "*.*")],
+            parent=self.window
+        )
+        
+        if filepath:
+            try:
+                self.fig.savefig(filepath, dpi=300, bbox_inches='tight', 
+                                facecolor='#2c3e50', edgecolor='none')
+                messagebox.showinfo("Success", f"Graph exported to:\n{filepath}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to export: {str(e)}")
+
+
+def get_season_name(season_str):
+    """Получить название сезона по строке"""
+    if season_names:
+        if season_str in season_names:
+            return season_str
+    return season_str
+
+
+def create_graph():
+    """Создать окно с графиком"""
+    global current_model
+    if current_model is None:
+        messagebox.showerror("Error", "Model not loaded or trained. Please load or train a model first.")
+        return
+    
+    try:
+        episode_str = entry_episode.get()
+        int(episode_str)  # Проверка что это число
+    except:
+        messagebox.showerror("Error", "Please enter a valid episode number.")
+        return
+    
+    # Создаем объект-обертку для передачи данных
+    class PointCreatorWrapper:
+        def __init__(self):
+            self.anchors = anchors
+    
+    wrapper = PointCreatorWrapper()
+    wrapper.anchors = anchors
+    
+    GraphWindow(root, wrapper)
+
+
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
     try:
@@ -487,12 +865,47 @@ def update_progress_bar(epoch, total_epochs):
     root.update_idletasks()
 
 
+def load_test_data_command():
+    """Command handler for loading test data"""
+    global X_test_data, y_test_data, test_data_loaded
+    filepath = filedialog.askopenfilename(title="Select Test Data File",
+                                           filetypes=[("JSON files", "*.json"), ("All files", "*.*")])
+    if not filepath:
+        return
+    
+    X, y = load_data(filepath)
+    if X is not None and y is not None:
+        X_test_data = np.array(X)
+        y_test_data = np.array(y)
+        test_data_loaded = True
+        messagebox.showinfo("Success", f"Test data loaded: {len(X_test_data)} samples")
+        config['Paths']['test_data_path'] = filepath
+        save_config()
+        
+        # Обновляем статус
+        label_test_data_status.config(text=f"✅ Test Data: {len(X_test_data)} samples", foreground="#2ecc71")
+    else:
+        X_test_data, y_test_data = None, None
+        test_data_loaded = False
+        label_test_data_status.config(text="❌ Test Data: Not loaded", foreground="#e74c3c")
+
+
 def train_model_thread(X_train, y_train, X_test, y_test, epochs, batch_size):
     """Thread function for model training"""
-    global current_model, training_history, test_loss
+    global current_model, training_history, test_loss, X_test_data, y_test_data
     try:
+        # Используем загруженные тестовые данные, если они есть
+        if test_data_loaded and X_test_data is not None and y_test_data is not None:
+            test_X = X_test_data
+            test_y = y_test_data
+            print(f"Using loaded test data: {len(test_X)} samples")
+        else:
+            test_X = X_test
+            test_y = y_test
+            print(f"Using split test data: {len(test_X)} samples")
+        
         current_model, training_history, test_loss, success_rate = create_and_train_model(
-            X_train, y_train, X_test, y_test, epochs, batch_size,
+            X_train, y_train, test_X, test_y, epochs, batch_size,
             progress_callback=update_progress_bar
         )
         label_model_success.config(text=f'Success Rate: {success_rate:.2f}%')
@@ -506,8 +919,8 @@ def train_model_thread(X_train, y_train, X_test, y_test, epochs, batch_size):
 
 def train_model_command():
     """Command handler for training button"""
-    global X_train, X_test, y_train, y_test
-    if X_train is None or y_train is None or X_test is None or y_test is None:
+    global X_train, X_test, y_train, y_test, X_train_data, y_train_data
+    if X_train is None or y_train is None:
         messagebox.showerror("Error", "Data not loaded. Please load data first.")
         return
     try:
@@ -522,7 +935,7 @@ def train_model_command():
 
 def load_data_command():
     """Command handler for loading data"""
-    global X_train, X_test, y_train, y_test, data_X, data_Y
+    global X_train, X_test, y_train, y_test, data_X, data_Y, X_train_data, y_train_data
     filepath = filedialog.askopenfilename(title="Select Data File",
                                            filetypes=[("JSON files", "*.json"), ("All files", "*.*")])
     if not filepath:
@@ -535,6 +948,7 @@ def load_data_command():
         X = np.array(X)
         y = np.array(y)
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_train_data, y_train_data = X_train.copy(), y_train.copy()
         messagebox.showinfo("Success", "Data loaded successfully.")
         config['Paths']['data_path'] = filepath
         save_config()
@@ -1008,6 +1422,7 @@ def load_config():
         if 'Paths' not in config:
             config['Paths'] = {}
         config['Paths']['data_path'] = 'IDS.json'
+        config['Paths']['test_data_path'] = ''
         config['Paths']['save_path'] = ''
         config['Paths']['load_path'] = ''
         save_config()
@@ -1384,7 +1799,11 @@ button_predict_point = ttk.Button(frame_prediction_buttons, text="Predict Point"
 button_predict_point.pack(side=tk.LEFT, padx=5)
 
 button_predict_episode = ttk.Button(frame_prediction_buttons, text="Predict Episode", command=predict_episode)
-button_predict_episode.pack(side=tk.RIGHT, padx=5)
+button_predict_episode.pack(side=tk.LEFT, padx=5)
+
+# Create Graph button
+button_create_graph = ttk.Button(frame_prediction_buttons, text="Create Graph", command=create_graph)
+button_create_graph.pack(side=tk.LEFT, padx=5)
 
 button_load_season_names = ttk.Button(frame_selection, text="Load Names", command=load_season_names, width=20)
 button_load_season_names.grid(row=0, column=4, padx=5, pady=5)
@@ -1403,10 +1822,18 @@ entry_data_path.grid(row=0, column=1, padx=5, pady=5)
 entry_data_path.insert(0, config['Paths'].get('data_path', 'IDS.json'))
 
 button_load_data = ttk.Button(frame_dataset, text="Load Data", command=load_data_command)
-button_load_data.grid(row=1, column=0, columnspan=2, pady=10)
+button_load_data.grid(row=1, column=0, columnspan=2, pady=5)
+
+# Load Test Data button
+button_load_test_data = ttk.Button(frame_dataset, text="Load Test Data", command=load_test_data_command)
+button_load_test_data.grid(row=2, column=0, columnspan=2, pady=5)
+
+# Test data status label
+label_test_data_status = ttk.Label(frame_dataset, text="❌ Test Data: Not loaded", foreground="#e74c3c")
+label_test_data_status.grid(row=3, column=0, columnspan=2, pady=5)
 
 button_fullscreen = ttk.Button(frame_dataset, text="Fullscreen", command=toggle_fullscreen)
-button_fullscreen.grid(row=2, column=0, columnspan=2, pady=10)
+button_fullscreen.grid(row=4, column=0, columnspan=2, pady=10)
 
 frame_capsule = ttk.LabelFrame(right_frame, text="Capsule Creation")
 frame_capsule.pack(pady=5, fill=tk.X, padx=10)
