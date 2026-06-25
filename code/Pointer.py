@@ -345,33 +345,33 @@ class DatasetManager:
         self.point_creator = point_creator
         self.datasets = {}
         self.current_dataset = None
-        self.datasets_dir = "datasets"
-        os.makedirs(self.datasets_dir, exist_ok=True)
-        self.load_datasets_list()
     
     def load_datasets_list(self):
-        if os.path.exists(self.datasets_dir):
-            for filename in os.listdir(self.datasets_dir):
-                if filename.endswith('.json'):
-                    name = filename[:-5]
-                    try:
-                        with open(os.path.join(self.datasets_dir, filename), 'r') as f:
-                            data = json.load(f)
-                            self.datasets[name] = data
-                    except:
-                        pass
+        # Не загружаем автоматически
+        pass
     
     def save_dataset(self, name, data):
-        filepath = os.path.join(self.datasets_dir, f"{name}.json")
-        with open(filepath, 'w') as f:
-            json.dump(data, f, indent=4)
-        self.datasets[name] = data
+        """Сохранить датасет через проводник"""
+        filepath = filedialog.asksaveasfilename(
+            title=f"Save Dataset '{name}'",
+            defaultextension=".json",
+            initialfile=f"{name}.json",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            parent=self.point_creator.root
+        )
+        if filepath:
+            try:
+                with open(filepath, 'w') as f:
+                    json.dump(data, f, indent=4)
+                self.datasets[name] = data
+                return True
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save: {str(e)}")
+                return False
+        return False
     
     def delete_dataset(self, name):
         if name in self.datasets:
-            filepath = os.path.join(self.datasets_dir, f"{name}.json")
-            if os.path.exists(filepath):
-                os.remove(filepath)
             del self.datasets[name]
     
     def get_dataset_names(self):
@@ -500,11 +500,11 @@ class DatasetManagerWindow:
             messagebox.showwarning("Warning", "Please select a dataset first!")
             return
         
-        if messagebox.askyesno("Confirm", f"Delete dataset '{self.selected_dataset}'?"):
+        if messagebox.askyesno("Confirm", f"Delete dataset '{self.selected_dataset}' from memory?"):
             self.manager.delete_dataset(self.selected_dataset)
             self.selected_dataset = None
             self.refresh_datasets()
-            messagebox.showinfo("Success", "Dataset deleted!")
+            messagebox.showinfo("Success", "Dataset removed from memory!")
     
     def save_dataset(self):
         if not self.point_creator.data["X"]:
@@ -514,12 +514,12 @@ class DatasetManagerWindow:
         name = simpledialog.askstring("Save Dataset", "Enter dataset name:", parent=self.window)
         if name:
             if name in self.manager.datasets:
-                if not messagebox.askyesno("Overwrite", f"Dataset '{name}' already exists. Overwrite?"):
+                if not messagebox.askyesno("Overwrite", f"Dataset '{name}' already exists in memory. Overwrite?"):
                     return
             
-            self.manager.save_dataset(name, self.point_creator.data)
-            self.refresh_datasets()
-            messagebox.showinfo("Success", f"Dataset '{name}' saved!")
+            if self.manager.save_dataset(name, self.point_creator.data):
+                self.refresh_datasets()
+                messagebox.showinfo("Success", f"Dataset '{name}' saved!")
     
     def load_dataset(self):
         filepath = filedialog.askopenfilename(
@@ -534,9 +534,9 @@ class DatasetManagerWindow:
                     data = json.load(f)
                 
                 name = os.path.basename(filepath)[:-5]
-                self.manager.save_dataset(name, data)
+                self.manager.datasets[name] = data
                 self.refresh_datasets()
-                messagebox.showinfo("Success", f"Dataset '{name}' loaded!")
+                messagebox.showinfo("Success", f"Dataset '{name}' loaded from:\n{filepath}")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load: {str(e)}")
     
@@ -812,8 +812,22 @@ class EpisodeListWindow:
                     new_data["Y"].append(quartet)
         
         if new_data["X"]:
-            self.manager.save_dataset(name, new_data)
-            messagebox.showinfo("Success", f"Saved {len(new_data['X'])} points as '{name}'!")
+            # Сохраняем через проводник
+            filepath = filedialog.asksaveasfilename(
+                title=f"Save Episodes as '{name}'",
+                defaultextension=".json",
+                initialfile=f"{name}.json",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                parent=self.window
+            )
+            if filepath:
+                try:
+                    with open(filepath, 'w') as f:
+                        json.dump(new_data, f, indent=4)
+                    self.manager.datasets[name] = new_data
+                    messagebox.showinfo("Success", f"Saved {len(new_data['X'])} points as '{name}'!")
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to save: {str(e)}")
     
     def load_to_dataset(self):
         selected_episodes = self.get_selected_episodes()
@@ -917,7 +931,7 @@ class EpisodeListWindow:
         combined_data = {"X": target_data["X"] + source_data["X"], 
                         "Y": target_data["Y"] + source_data["Y"]}
         
-        self.manager.save_dataset(target_name, combined_data)
+        self.manager.datasets[target_name] = combined_data
         messagebox.showinfo("Success", 
             f"Loaded {len(source_data['X'])} points into '{target_name}'!")
 
